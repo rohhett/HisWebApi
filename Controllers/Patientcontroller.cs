@@ -1003,7 +1003,8 @@ namespace HISWEBAPI.Controllers
            [FromQuery] int doctorDepartmentId = 0,
            [FromQuery] int dateTypeId = 0,
            [FromQuery] int statusId = 0,
-           [FromQuery] int bedTypeId = 0)
+           [FromQuery] int bedTypeId = 0,
+           [FromQuery] int isTempratureRoomOut = 0)
         {
             _log.Info($"SearchPatientForConsultation called. BranchId={branchId}, TypeId={typeId}, " +
                       $"FromDate={fromDate}, ToDate={toDate}");
@@ -1073,7 +1074,8 @@ namespace HISWEBAPI.Controllers
                 DoctorDepartmentId = doctorDepartmentId,
                 DateTypeId = dateTypeId,
                 StatusId = statusId,
-                BedTypeId = bedTypeId
+                BedTypeId = bedTypeId,
+                isTempratureRoomOut = isTempratureRoomOut
             };
 
             var serviceResult = _patientRepository.SearchPatientForConsultation(request);

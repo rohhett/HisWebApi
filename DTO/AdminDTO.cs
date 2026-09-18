@@ -1844,5 +1844,101 @@ namespace HISWEBAPI.DTO
     {
         public int ComponentId { get; set; }
     }
+    public class CreateUpdateDischargeProcessMasterRequest
+    {
+        public int DischargeProcessId { get; set; } = 0;
+
+        [Required(ErrorMessage = "ProcessKey is required")]
+        [StringLength(100, ErrorMessage = "ProcessKey cannot exceed 100 characters")]
+        [RegularExpression(@"^[A-Z0-9_]+$", ErrorMessage = "ProcessKey must be uppercase letters, digits, and underscores only")]
+        public string ProcessKey { get; set; }
+
+        [Required(ErrorMessage = "ProcessName is required")]
+        [StringLength(200, ErrorMessage = "ProcessName cannot exceed 200 characters")]
+        public string ProcessName { get; set; }
+
+        [Required(ErrorMessage = "FaIconId is required")]
+        [Range(0, int.MaxValue, ErrorMessage = "FaIconId must be greater than 0")]
+        public int FaIconId { get; set; }
+
+        [Required(ErrorMessage = "IsMandatory is required")]
+        [Range(0, 1, ErrorMessage = "IsMandatory must be 0 or 1")]
+        public int IsMandatory { get; set; } = 0;
+
+      
+
+        [Required(ErrorMessage = "IsActive is required")]
+        [Range(0, 1, ErrorMessage = "IsActive must be 0 or 1")]
+        public int IsActive { get; set; } = 1;
+
+        [Range(0, 1, ErrorMessage = "IsSystemProcess must be 0 or 1")]
+        public int IsSystemProcess { get; set; } = 0;
+    }
+
+    public class CreateUpdateDischargeProcessMasterResponse
+    {
+        public int DischargeProcessId { get; set; }
+    }
+
+    public class UpdateDischargeProcessSequenceItemRequest
+    {
+        [Required(ErrorMessage = "DischargeProcessId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "DischargeProcessId must be greater than 0")]
+        public int DischargeProcessId { get; set; }
+
+        [Required(ErrorMessage = "SequenceNo is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "SequenceNo must be greater than 0")]
+        public int SequenceNo { get; set; }
+    }
+
+    public class UpdateDischargeProcessSequenceRequest
+    {
+        [Required(ErrorMessage = "Sequences is required")]
+        [MinLength(1, ErrorMessage = "At least one sequence item is required")]
+        public List<UpdateDischargeProcessSequenceItemRequest> Sequences { get; set; } = new();
+    }
+
+    public class SaveDischargeProcessCorporateMappingRequest
+    {
+        [Required(ErrorMessage = "DischargeProcessId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "DischargeProcessId must be greater than 0")]
+        public int DischargeProcessId { get; set; }
+
+        /// <summary>Empty list = process becomes Global (no corporate restriction).</summary>
+        [Required(ErrorMessage = "CorporateIds is required")]
+        public List<int> CorporateIds { get; set; } = new();
+    }
+
+    public class UserDischargeProcessMappingRequest
+    {
+        [Required(ErrorMessage = "TypeId is required")]
+        public int TypeId { get; set; }
+
+        [Required(ErrorMessage = "UserId is required")]
+        public int UserId { get; set; }
+
+        [Required(ErrorMessage = "BranchId is required")]
+        public int BranchId { get; set; }
+
+        [Required(ErrorMessage = "DischargeProcessId is required")]
+        public int DischargeProcessId { get; set; }
+    }
+
+    public class SaveUserDischargeProcessMappingRequest
+    {
+        [Required(ErrorMessage = "TypeId is required")]
+        public int TypeId { get; set; }
+
+        [Required(ErrorMessage = "UserId is required")]
+        public int UserId { get; set; }
+
+        [Required(ErrorMessage = "BranchId is required")]
+        public int BranchId { get; set; }
+
+        [Required(ErrorMessage = "IsFirst is required")]
+        public int IsFirst { get; set; }
+
+        public List<UserDischargeProcessMappingRequest>? UserDischargeProcessMappings { get; set; }
+    }
 
 }

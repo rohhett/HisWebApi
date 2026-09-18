@@ -23,5 +23,25 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<object> GetIPDBillingSummary(int branchId, int visitId);
         ServiceResult<object> GetIPDPatientBillAmounts(int visitId, int patientId);
         ServiceResult<object> GetIPDPatientOrderDetails(int ftid, AllGlobalValues globalValues);
+
+        ServiceResult<string> RemoveIPDServiceItem(RemoveIPDServiceItemRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateIPDServicePackage(UpdateIPDServicePackageRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateIPDServiceCorporateNonPayable(UpdateIPDServiceCorporateNonPayableRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateIPDServiceDiscAmt(UpdateIPDServiceDiscAmtRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateIPDServiceDiscPer(UpdateIPDServiceDiscPerRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateIPDServiceRate(UpdateIPDServiceRateRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateIPDServiceQty(UpdateIPDServiceQtyRequest request, AllGlobalValues globalValues);
+        ServiceResult<SaveIPDPatientAdvanceResponse> SaveIPDPatientAdvance(SaveIPDPatientAdvanceRequest request,AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<Dictionary<string, object>>> GetIPDReceiptDetails(int receiptId);
+
+        ServiceResult<object> InitializePatientDischargeProcess(InitializePatientDischargeProcessRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetPatientDischargeProcess(int visitId,int branchId, AllGlobalValues globalValues);
+        ServiceResult<object> GetCurrentDischargeProcess(int visitId);
+        ServiceResult<object> StartPatientDischargeProcess(StartPatientDischargeProcessRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> CompletePatientDischargeProcess(CompletePatientDischargeProcessRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> ValidatePatientDischargeProcess(int visitId);
+        ServiceResult<string> SaveIPDDischarge(SaveIPDDischargeRequest request, AllGlobalValues globalValues);
+        ServiceResult<CreateSupplementaryBillFromMainBillResponse> CreateSupplementaryBillFromMainBill(CreateSupplementaryBillFromMainBillRequest request, AllGlobalValues globalValues);
+
     }
 }

@@ -138,6 +138,44 @@ namespace HISWEBAPI.Controllers
             
         }
 
+        [HttpGet("getPredefineQueryResult")]
+        [Authorize]
+        public IActionResult GetPredefineQueryResult(
+    [FromQuery] string queryName,
+    [FromQuery] string filter1 = null,
+    [FromQuery] string filter2 = null)
+        {
+            _log.Info($"GetPredefineQueryResult called. QueryName={queryName}, Filter1={filter1 ?? "null"}, Filter2={filter2 ?? "null"}");
+
+            if (string.IsNullOrWhiteSpace(queryName))
+            {
+                _log.Warn("QueryName is missing or empty.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "QueryName is required",
+                    errors = new { queryName }
+                });
+            }
+
+            var serviceResult = _homeRepository.GetPredefineQueryResult(queryName, filter1, filter2);
+
+            if (serviceResult.Result)
+                _log.Info($"PredefineQueryResult fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"PredefineQueryResult fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpPost("createUpdateResponseMessage")]
         [Authorize]
         public IActionResult CreateUpdateResponseMessage([FromBody] ResponseMessageRequest request)
@@ -204,6 +242,117 @@ namespace HISWEBAPI.Controllers
                 });
             
            
+        }
+
+
+        [HttpPost("sendMobileVerificationOtp")]
+        [Authorize]
+        public IActionResult SendMobileVerificationOtp([FromBody] SendMobileVerificationOtpRequest request)
+        {
+            _log.Info($"SendMobileVerificationOtp called. MobileNumber={request.MobileNumber}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var serviceResult = _homeRepository.SendMobileVerificationOtp(request);
+
+            if (serviceResult.Result)
+                _log.Info($"Mobile verification OTP sent: {serviceResult.Message}");
+            else
+                _log.Warn($"Mobile verification OTP send failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("verifyMobileVerificationOtp")]
+        [Authorize]
+        public IActionResult VerifyMobileVerificationOtp([FromBody] VerifyMobileVerificationOtpRequest request)
+        {
+            _log.Info($"VerifyMobileVerificationOtp called. MobileNumber={request.MobileNumber}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var serviceResult = _homeRepository.VerifyMobileVerificationOtp(request);
+
+            if (serviceResult.Result)
+                _log.Info($"Mobile number verified: {serviceResult.Message}");
+            else
+                _log.Warn($"Mobile OTP verification failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message
+            });
+        }
+
+        [HttpPost("sendEmailVerificationOtp")]
+        [Authorize]
+        public IActionResult SendEmailVerificationOtp([FromBody] SendEmailVerificationOtpRequest request)
+        {
+            _log.Info($"SendEmailVerificationOtp called. Email={request.Email}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var serviceResult = _homeRepository.SendEmailVerificationOtp(request);
+
+            if (serviceResult.Result)
+                _log.Info($"Email verification OTP sent: {serviceResult.Message}");
+            else
+                _log.Warn($"Email verification OTP send failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("verifyEmailVerificationOtp")]
+        [Authorize]
+        public IActionResult VerifyEmailVerificationOtp([FromBody] VerifyEmailVerificationOtpRequest request)
+        {
+            _log.Info($"VerifyEmailVerificationOtp called. Email={request.Email}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var serviceResult = _homeRepository.VerifyEmailVerificationOtp(request);
+
+            if (serviceResult.Result)
+                _log.Info($"Email verified: {serviceResult.Message}");
+            else
+                _log.Warn($"Email OTP verification failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message
+            });
         }
 
 
@@ -541,6 +690,42 @@ namespace HISWEBAPI.Controllers
                 _log.Info($"Corporates fetched successfully: {serviceResult.Message}");
             else
                 _log.Warn($"No corporates found: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("uploadDocument")]
+        [Authorize]
+        public IActionResult UploadDocument([FromForm] UploadDocumentFromFileManagerRequest request)
+        {
+            _log.Info($"UploadDocument called. FileName={request?.File?.FileName}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for UploadDocument.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _homeRepository.UploadDocument(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"Document uploaded successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"Document upload failed: {serviceResult.Message}");
 
             return StatusCode(serviceResult.StatusCode, new
             {
@@ -1336,6 +1521,42 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        [HttpPatch("updateFavoriteBillingTab")]
+        [Authorize]
+        public IActionResult UpdateFavoriteBillingTab([FromBody] UpdateFavoriteBillingTabRequest request)
+        {
+            _log.Info($"UpdateFavoriteBillingTab called. BranchId={request?.BranchId}, RoleId={request?.RoleId}, TabId={request?.TabId}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for UpdateFavoriteBillingTab.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _homeRepository.UpdateFavoriteBillingTab(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"Favorite billing tab updated successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"Favorite billing tab update failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpGet("getAssignBranchRight")]
         [Authorize]
         public IActionResult GetAssignBranchRight([FromQuery] int branchId)
@@ -1406,7 +1627,41 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        [HttpGet("getReceiptPaymentDetails")]
+        [Authorize]
+        public IActionResult GetReceiptPaymentDetails([FromQuery] int receiptId)
+        {
+            _log.Info($"GetReceiptPaymentDetails called. ReceiptId={receiptId}");
 
+            if (receiptId <= 0)
+            {
+                _log.Warn("Invalid ReceiptId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "ReceiptId must be greater than 0",
+                    errors = new { receiptId }
+                });
+            }
 
+            var serviceResult = _homeRepository.GetReceiptPaymentDetails(receiptId);
+
+            if (serviceResult.Result)
+                _log.Info($"Receipt payment details fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"Receipt payment details fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+       
     }
 }

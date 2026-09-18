@@ -1,5 +1,6 @@
 ﻿using HISWEBAPI.Configuration;
 using HISWEBAPI.DTO;
+using HISWEBAPI.Repositories.Implementations;
 using HISWEBAPI.Repositories.Interfaces;
 using HISWEBAPI.Services;
 using log4net;
@@ -900,5 +901,559 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+
+
+        [HttpPatch("removeIPDServiceItem")]
+        [Authorize]
+        public IActionResult RemoveIPDServiceItem([FromBody] RemoveIPDServiceItemRequest request)
+        {
+            _log.Info($"RemoveIPDServiceItem called. VisitId={request?.VisitId}, FTDIdList={request?.FTDIdList}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.RemoveIPDServiceItem(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateIPDServicePackage")]
+        [Authorize]
+        public IActionResult UpdateIPDServicePackage([FromBody] UpdateIPDServicePackageRequest request)
+        {
+            _log.Info($"UpdateIPDServicePackage called. VisitId={request?.VisitId}, FTDIdList={request?.FTDIdList}, PackageId={request?.PackageId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.UpdateIPDServicePackage(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateIPDServiceCorporateNonPayable")]
+        [Authorize]
+        public IActionResult UpdateIPDServiceCorporateNonPayable([FromBody] UpdateIPDServiceCorporateNonPayableRequest request)
+        {
+            _log.Info($"UpdateIPDServiceCorporateNonPayable called. VisitId={request?.VisitId}, FTDIdList={request?.FTDIdList}, IsNonPayable={request?.IsNonPayable}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.UpdateIPDServiceCorporateNonPayable(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateIPDServiceDiscAmt")]
+        [Authorize]
+        public IActionResult UpdateIPDServiceDiscAmt([FromBody] UpdateIPDServiceDiscAmtRequest request)
+        {
+            _log.Info($"UpdateIPDServiceDiscAmt called. VisitId={request?.VisitId}, FTDIdList={request?.FTDIdList}, DiscAmt={request?.DiscAmt}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.UpdateIPDServiceDiscAmt(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateIPDServiceDiscPer")]
+        [Authorize]
+        public IActionResult UpdateIPDServiceDiscPer([FromBody] UpdateIPDServiceDiscPerRequest request)
+        {
+            _log.Info($"UpdateIPDServiceDiscPer called. VisitId={request?.VisitId}, FTDIdList={request?.FTDIdList}, DiscPer={request?.DiscPer}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.UpdateIPDServiceDiscPer(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateIPDServiceRate")]
+        [Authorize]
+        public IActionResult UpdateIPDServiceRate([FromBody] UpdateIPDServiceRateRequest request)
+        {
+            _log.Info($"UpdateIPDServiceRate called. VisitId={request?.VisitId}, FTDIdList={request?.FTDIdList}, Rate={request?.Rate}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.UpdateIPDServiceRate(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateIPDServiceQty")]
+        [Authorize]
+        public IActionResult UpdateIPDServiceQty([FromBody] UpdateIPDServiceQtyRequest request)
+        {
+            _log.Info($"UpdateIPDServiceQty called. VisitId={request?.VisitId}, FTDIdList={request?.FTDIdList}, Qty={request?.Qty}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.UpdateIPDServiceQty(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("saveIPDPatientAdvance")]
+        [Authorize]
+        public IActionResult SaveIPDPatientAdvance([FromBody] SaveIPDPatientAdvanceRequest request)
+        {
+            _log.Info($"SaveIPDPatientAdvance called. Type={request?.Type}, PatientId={request?.PatientId}, VisitId={request?.VisitId}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SaveIPDPatientAdvance.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            if (request.PaymentDetails == null || request.PaymentDetails.Count == 0)
+            {
+                _log.Warn("No payment details provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "At least one payment detail is required",
+                    errors = new[] { "PaymentDetails cannot be empty" }
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.SaveIPDPatientAdvance(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"SaveIPDPatientAdvance succeeded: {serviceResult.Message}");
+            else
+                _log.Warn($"SaveIPDPatientAdvance failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getIPDReceiptDetails")]
+        [Authorize]
+        public IActionResult GetIPDReceiptDetails([FromQuery] int receiptId)
+        {
+            _log.Info($"GetIPDReceiptDetails called. ReceiptId={receiptId}");
+
+            if (receiptId <= 0)
+            {
+                _log.Warn("Invalid ReceiptId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "ReceiptId must be greater than 0",
+                    errors = new { receiptId }
+                });
+            }
+
+            var serviceResult = _ipdRepository.GetIPDReceiptDetails(receiptId);
+
+            if (serviceResult.Result)
+                _log.Info($"IPD receipt details fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"IPD receipt details fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+        // ─── Patient Workflow ──────────────────────────────────────────────
+
+        [HttpPost("initializePatientDischargeProcess")]
+        [Authorize]
+        public IActionResult InitializePatientDischargeProcess([FromBody] InitializePatientDischargeProcessRequest request)
+        {
+            _log.Info($"InitializePatientDischargeProcess called. VisitId={request?.VisitId}, CorporateId={request?.CorporateId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.InitializePatientDischargeProcess(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getPatientDischargeProcess")]
+        [Authorize]
+        public IActionResult GetPatientDischargeProcess([FromQuery] int visitId, [FromQuery] int branchId)
+        {
+            _log.Info($"GetPatientDischargeProcess called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
+            }
+
+            if (branchId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "BranchId must be greater than 0", errors = new { branchId } });
+            }
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.GetPatientDischargeProcess(visitId,branchId, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getCurrentDischargeProcess")]
+        [Authorize]
+        public IActionResult GetCurrentDischargeProcess([FromQuery] int visitId)
+        {
+            _log.Info($"GetCurrentDischargeProcess called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
+            }
+
+            var serviceResult = _ipdRepository.GetCurrentDischargeProcess(visitId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("startPatientDischargeProcess")]
+        [Authorize]
+        public IActionResult StartPatientDischargeProcess([FromBody] StartPatientDischargeProcessRequest request)
+        {
+            _log.Info($"StartPatientDischargeProcess called. VisitId={request?.VisitId}, DischargeProcessId={request?.DischargeProcessId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.StartPatientDischargeProcess(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("completePatientDischargeProcess")]
+        [Authorize]
+        public IActionResult CompletePatientDischargeProcess([FromBody] CompletePatientDischargeProcessRequest request)
+        {
+            _log.Info($"CompletePatientDischargeProcess called. VisitId={request?.VisitId}, DischargeProcessId={request?.DischargeProcessId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.CompletePatientDischargeProcess(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("validatePatientDischarge")]
+        [Authorize]
+        public IActionResult ValidatePatientDischarge([FromQuery] int visitId)
+        {
+            _log.Info($"ValidatePatientDischarge called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
+            }
+
+            var serviceResult = _ipdRepository.ValidatePatientDischargeProcess(visitId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+       
+
+        [HttpPatch("saveIPDDischarge")]
+        [Authorize]
+        public IActionResult SaveIPDDischarge([FromBody] SaveIPDDischargeRequest request)
+        {
+            _log.Info($"SaveIPDDischarge called. VisitId={request?.VisitId}, BedId={request?.BedId}, DischargeType={request?.DischargeType}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SaveIPDDischarge.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.DischargeDate))
+            {
+                _log.Warn("DischargeDate is missing.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "DischargeDate is required",
+                    errors = new { request.DischargeDate }
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.DischargeTime))
+            {
+                _log.Warn("DischargeTime is missing.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "DischargeTime is required",
+                    errors = new { request.DischargeTime }
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.SaveIPDDischarge(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"IPD patient discharged successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"IPD patient discharge failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+        [HttpPost("createSupplementaryBillFromMainBill")]
+        [Authorize]
+        public IActionResult CreateSupplementaryBillFromMainBill([FromBody] CreateSupplementaryBillFromMainBillRequest request)
+        {
+            _log.Info($"SaveIPDBilling called. PatientId={request?.VisitDetails?.PatientId}, VisitId={request?.VisitDetails?.VisitId}, BranchId={request?.VisitDetails?.BranchId}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SaveIPDBilling.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            if (request.BillingItems == null || request.BillingItems.Count == 0)
+            {
+                _log.Warn("No billing items provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "At least one billing item is required",
+                    errors = new[] { "BillingItems cannot be empty" }
+                });
+            }
+
+            if (request.VisitDetails.PatientId <= 0)
+            {
+                _log.Warn("Invalid PatientId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "PatientId must be greater than 0",
+                    errors = new { patientId = request.VisitDetails.PatientId }
+                });
+            }
+
+            if (request.VisitDetails.BranchId <= 0)
+            {
+                _log.Warn("Invalid BranchId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "BranchId must be greater than 0",
+                    errors = new { branchId = request.VisitDetails.BranchId }
+                });
+            }
+
+            if (request.VisitDetails.VisitId <= 0)
+            {
+                _log.Warn("Invalid VisitId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "VisitId must be greater than 0",
+                    errors = new { visitId = request.VisitDetails.VisitId }
+                });
+            }
+
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.CreateSupplementaryBillFromMainBill(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"SaveIPDBilling succeeded: {serviceResult.Message}");
+            else
+                _log.Warn($"SaveIPDBilling failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
     }
 }

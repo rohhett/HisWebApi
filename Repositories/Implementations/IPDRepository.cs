@@ -5,11 +5,13 @@ using HISWEBAPI.Exceptions;
 using HISWEBAPI.Models;
 using HISWEBAPI.Repositories.Interfaces;
 using HISWEBAPI.Services;
+using HISWEBAPI.Utilities;
 using log4net;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 
@@ -1098,14 +1100,14 @@ namespace HISWEBAPI.Repositories.Implementations
                 // ── 4. Receipt ───────────────────────────────────────────────────────
                 int receiptId = 0;
                 bool isReceipt = false;
-                if (totalPaidAmount > 0 && v.IsSupplementaryBill==1)
+                if (totalPaidAmount > 0)
                 {
                     var receipt = new Receipts
                     {
                         HospId = globalValues.hospId,
                         BranchId = v.BranchId,
                         RoleId = v.RoleId,
-                        FTID = ftid,
+                        FTID = v.IsSupplementaryBill == 0 ? 0 : ftid,
                         VisitId = visitId,
                         PatientId = v.PatientId,
                         Amount = totalPaidAmount,
@@ -1337,6 +1339,988 @@ namespace HISWEBAPI.Repositories.Implementations
                 LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
                 var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
                 return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+
+        private ServiceResult<string> UpdateFTDServices(
+    int visitId,
+    string updateColumns,
+    string ftdIdList,
+    AllGlobalValues globalValues,
+    string filter = null)
+        {
+            var connectionString = _configuration.GetConnectionString("ConnectionString");
+            SqlConnection con = new SqlConnection(connectionString);
+            con.Open();
+            var tnx = CustomSqlHelper.getSqlTransaction(con);
+
+            try
+            {
+                _log.Info($"UpdateFTDServices called. VisitId={visitId}, FTDIdList={ftdIdList}");
+
+                _sqlHelper.DML(tnx, "U_CommonUpdateFTDServices", CommandType.StoredProcedure, new
+                {
+                    @updateColumns = updateColumns,
+                    @FTDList = ftdIdList,
+                    @filter = (object)filter ?? DBNull.Value,
+                    @userId = globalValues.userId,
+                    @ipAddress = globalValues.ipAddress
+                });
+
+                UpdateIPDBillingByVisitId(tnx, visitId, globalValues);
+
+                tnx.Commit();
+                _log.Info($"UpdateFTDServices committed. VisitId={visitId}");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success(
+                    "IPD billing updated successfully",
+                    alert.Type,
+                    alert.Message,
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                try { tnx.Rollback(); } catch { /* swallow rollback exception */ }
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+            finally
+            {
+                tnx.Dispose();
+                if (con.State == ConnectionState.Open)
+                    con.Close();
+            }
+        }
+
+        /// <summary>
+        /// Re-syncs PatientBillDetails / FinancialTransactions totals for a visit
+        /// against the current FinancialTransactionDetails rows. Kept as a separate,
+        /// reusable method (called from UpdateFTDServices and can be called standalone
+        /// wherever a visit's billing totals need re-syncing after an FTD change).
+        /// </summary>
+        private void UpdateIPDBillingByVisitId(SqlTransaction tnx, int visitId, AllGlobalValues globalValues)
+        {
+            _sqlHelper.DML(tnx, "U_UpdateIPDBillingByVisitDetails", CommandType.StoredProcedure, new
+            {
+                @visitId = visitId,
+                @userId = globalValues.userId,
+                @ipAddress = globalValues.ipAddress
+            });
+        }
+
+        private static string EscapeSql(string value)
+        {
+            return string.IsNullOrEmpty(value) ? string.Empty : value.Replace("'", "''");
+        }
+
+        public ServiceResult<string> RemoveIPDServiceItem(RemoveIPDServiceItemRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"RemoveIPDServiceItem called. VisitId={request.VisitId}, FTDIdList={request.FTDIdList}");
+
+                string updateColumns = $"IsCancel=1,CancelReason='{EscapeSql(request.CancelReason)}'";
+
+                return UpdateFTDServices(request.VisitId, updateColumns, request.FTDIdList, globalValues);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateIPDServicePackage(UpdateIPDServicePackageRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateIPDServicePackage called. VisitId={request.VisitId}, FTDIdList={request.FTDIdList}, PackageId={request.PackageId}");
+
+                string updateColumns = request.PackageId == 0
+                    ? "IsUnderPackage=0,PackageId=0,GrossAmt=S_GrossAmt,DiscAmt=S_DiscAmt,NetAmt=S_NetAmt"
+                    : $"IsUnderPackage=1,PackageId={request.PackageId},GrossAmt=0,DiscAmt=0,NetAmt=0";
+
+                return UpdateFTDServices(request.VisitId, updateColumns, request.FTDIdList, globalValues);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateIPDServiceCorporateNonPayable(UpdateIPDServiceCorporateNonPayableRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateIPDServiceCorporateNonPayable called. VisitId={request.VisitId}, FTDIdList={request.FTDIdList}, IsNonPayable={request.IsNonPayable}");
+
+                string updateColumns = $"IsCorporateNonPayable={request.IsNonPayable}";
+
+                return UpdateFTDServices(request.VisitId, updateColumns, request.FTDIdList, globalValues);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateIPDServiceDiscAmt(UpdateIPDServiceDiscAmtRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateIPDServiceDiscAmt called. VisitId={request.VisitId}, FTDIdList={request.FTDIdList}, DiscAmt={request.DiscAmt}");
+
+                string discAmt = request.DiscAmt.ToString(CultureInfo.InvariantCulture);
+                string updateColumns =
+                    $"DiscPer=({discAmt}/GrossAmt)*100,DiscAmt={discAmt},NetAmt=(GrossAmt-{discAmt}),DiscountReason='{EscapeSql(request.DiscReason)}'";
+
+                return UpdateFTDServices(request.VisitId, updateColumns, request.FTDIdList, globalValues, "IsUnderPackage=0");
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateIPDServiceDiscPer(UpdateIPDServiceDiscPerRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateIPDServiceDiscPer called. VisitId={request.VisitId}, FTDIdList={request.FTDIdList}, DiscPer={request.DiscPer}");
+
+                string discPer = request.DiscPer.ToString(CultureInfo.InvariantCulture);
+                string updateColumns =
+                    $"DiscPer={discPer},DiscAmt=(GrossAmt*{discPer}/100),NetAmt=(GrossAmt-(GrossAmt*{discPer}/100)),DiscountReason='{EscapeSql(request.DiscReason)}'";
+
+                return UpdateFTDServices(request.VisitId, updateColumns, request.FTDIdList, globalValues, "IsUnderPackage=0");
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateIPDServiceRate(UpdateIPDServiceRateRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateIPDServiceRate called. VisitId={request.VisitId}, FTDIdList={request.FTDIdList}, Rate={request.Rate}");
+
+                string rate = request.Rate.ToString(CultureInfo.InvariantCulture);
+                string updateColumns =
+                    $"Rate={rate},GrossAmt=({rate}*Qty),DiscAmt=({rate}*Qty*DiscPer/100),NetAmt=(({rate}*Qty)-({rate}*Qty*DiscPer/100))";
+
+                return UpdateFTDServices(request.VisitId, updateColumns, request.FTDIdList, globalValues, "IsUnderPackage=0");
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateIPDServiceQty(UpdateIPDServiceQtyRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateIPDServiceQty called. VisitId={request.VisitId}, FTDIdList={request.FTDIdList}, Qty={request.Qty}");
+
+                string qty = request.Qty.ToString(CultureInfo.InvariantCulture);
+                string updateColumns =
+                    $"Qty={qty},GrossAmt=(Rate*{qty}),DiscAmt=(Rate*{qty}*DiscPer/100),NetAmt=((Rate*{qty})-(Rate*{qty}*DiscPer/100))";
+
+                return UpdateFTDServices(request.VisitId, updateColumns, request.FTDIdList, globalValues);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<SaveIPDPatientAdvanceResponse> SaveIPDPatientAdvance(
+    SaveIPDPatientAdvanceRequest request,
+    AllGlobalValues globalValues)
+        {
+            var connectionString = _configuration.GetConnectionString("ConnectionString");
+            SqlConnection con = new SqlConnection(connectionString);
+            con.Open();
+            var tnx = CustomSqlHelper.getSqlTransaction(con);
+
+            try
+            {
+                _log.Info($"SaveIPDPatientAdvance called. Type={request.Type}, PatientId={request.PatientId}, VisitId={request.VisitId}");
+
+                decimal totalPaidAmount = request.PaymentDetails.Sum(p => p.Amount);
+
+                // Refund => negative amount, same as legacy behavior
+                if (request.Type.Trim().ToUpper() == "R")
+                    totalPaidAmount = (-1) * totalPaidAmount;
+
+                // ── 1. Receipts ──────────────────────────────────────────────────────
+                var receipt = new Receipts
+                {
+                    HospId = globalValues.hospId,
+                    BranchId = request.BranchId,
+                    RoleId = request.RoleId,
+                    FTID = 0,
+                    VisitId = request.VisitId,
+                    PatientId = request.PatientId,
+                    Amount = totalPaidAmount,
+                    PlutusTransactionReferenceID = request.PaymentDetails[0].PlutusTransactionReferenceID,
+                    TransactionLogId = request.PaymentDetails[0].TransactionLogId,
+                    UserId = globalValues.userId,
+                    IpAddress = globalValues.ipAddress,
+                    UniqueId = request.UniqueId,
+                    Remarks = request.Remarks,
+                    GuardianName = request.GuardianName
+                };
+
+                int receiptId = Convert.ToInt32(receipt.Create(_sqlHelper, tnx));
+                _log.Info($"Receipt created for IPD patient advance. ReceiptId={receiptId}, VisitId={request.VisitId}");
+
+                // ── 2. Receipt Payment Mode Details (skip Credit, PaymentModeTypeId == 4) ──
+                foreach (var p in request.PaymentDetails)
+                {
+                    if (p.PaymentModeTypeId == 4)
+                        continue;
+
+                    var rpmd = new ReceiptsPaymentModeDetails
+                    {
+                        HospId = globalValues.hospId,
+                        BranchId = request.BranchId,
+                        ReceiptID = receiptId,
+                        Amount = p.Amount,
+                        PaymentModeId = p.PaymentModeId,
+                        BankId = p.BankId > 0 ? p.BankId : (int?)null,
+                        ReferenceNo = p.RefNo,
+                        UserId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    };
+
+                    rpmd.Create(_sqlHelper, tnx);
+                }
+
+                // ── 3. Recalculate IPD billing totals for the visit ─────────────────
+                // Reuses the shared private helper already extracted for IPD billing mutations
+                UpdateIPDBillingByVisitId(tnx, request.VisitId, globalValues);
+
+
+                tnx.Commit();
+                _log.Info($"SaveIPDPatientAdvance committed. VisitId={request.VisitId}, ReceiptId={receiptId}");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<SaveIPDPatientAdvanceResponse>.Success(
+                    new SaveIPDPatientAdvanceResponse
+                    {
+                        PatientId = request.PatientId,
+                        VisitId = request.VisitId,
+                        ReceiptId = receiptId
+                    },
+                    alert.Type,
+                    "IPD patient advance saved successfully",
+                    201
+                );
+            }
+            catch (Exception ex)
+            {
+                try { tnx.Rollback(); } catch { /* swallow rollback exception */ }
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<SaveIPDPatientAdvanceResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+            finally
+            {
+                tnx.Dispose();
+                if (con.State == ConnectionState.Open)
+                    con.Close();
+            }
+        }
+
+        public ServiceResult<IEnumerable<Dictionary<string, object>>> GetIPDReceiptDetails(int receiptId)
+        {
+            try
+            {
+                _log.Info($"GetIPDReceiptDetails called. ReceiptId={receiptId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetIPDReceiptDetails",
+                    CommandType.StoredProcedure,
+                    new { receiptId = receiptId }
+                );
+
+                var result = dataTable.ToRawList();
+
+                if (!result.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No IPD receipt details found for ReceiptId={receiptId}");
+                    return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                        alert.Type,
+                        $"No IPD receipt details found for ReceiptId: {receiptId}",
+                        404
+                    );
+                }
+
+                _log.Info($"Retrieved {result.Count} IPD receipt detail row(s) for ReceiptId={receiptId}");
+
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Success(
+                    result,
+                    "Info",
+                    "IPD receipt details retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
+        // ─── Patient Workflow (visit-specific — never cached) ────────────────
+
+        public ServiceResult<object> InitializePatientDischargeProcess(
+            InitializePatientDischargeProcessRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"InitializePatientDischargeProcess called. VisitId={request.VisitId}, CorporateId={request.CorporateId}");
+
+                long result = _sqlHelper.RunProcedureInsert(
+                    "I_InitializePatientDischargeProcess",
+                    new IDataParameter[]
+                    {
+                        new SqlParameter("@VisitId", request.VisitId),
+                        new SqlParameter("@CorporateId", request.CorporateId),
+                        new SqlParameter("@UserId", globalValues.userId),
+                        new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                        new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                int resultValue = Convert.ToInt32(result);
+
+                if (resultValue == -2)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No applicable active discharge processes are configured", 404);
+                }
+
+                if (resultValue == -3)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+                }
+
+                // -1 = already initialized (idempotent), >0 = newly initialized — either way return the snapshot
+                var workflow = GetPatientDischargeProcess(request.VisitId,request.BranchId, globalValues);
+                string message = resultValue == -1
+                    ? "Discharge workflow already initialized for this visit"
+                    : "Discharge workflow initialized successfully";
+
+                if (!workflow.Result)
+                    return workflow;
+
+                var successAlert = _messageService.GetMessageAndTypeByAlertCode(
+                    resultValue == -1 ? "OPERATION_COMPLETED_SUCCESSFULLY" : "DATA_SAVED_SUCCESSFULLY");
+
+                return ServiceResult<object>.Success(workflow.Data, successAlert.Type, message, resultValue == -1 ? 200 : 201);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetPatientDischargeProcess(int visitId,int branchid, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"GetPatientDischargeProcess called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetPatientDischargeProcess",
+                    CommandType.StoredProcedure,
+                    new { 
+                        @VisitId = visitId,
+                        @UserId= globalValues.userId,
+                        @BranchId=branchid
+
+                    });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "Discharge workflow not initialized for this visit", 404);
+                }
+
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, $"{result.Count} process(es) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetCurrentDischargeProcess(int visitId)
+        {
+            try
+            {
+                _log.Info($"GetCurrentDischargeProcess called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetCurrentDischargeProcess",
+                    CommandType.StoredProcedure,
+                    new { @VisitId = visitId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No current process found", 404);
+                }
+
+                var row = dataTable.Rows[0];
+                var result = dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                    col => col.ColumnName,
+                    col => row[col] == DBNull.Value ? null : row[col]
+                );
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, "Current process retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> StartPatientDischargeProcess(
+            StartPatientDischargeProcessRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"StartPatientDischargeProcess called. VisitId={request.VisitId}, DischargeProcessId={request.DischargeProcessId}");
+
+                long result = _sqlHelper.RunProcedureInsert(
+                    "U_StartPatientDischargeProcess",
+                    new IDataParameter[]
+                    {
+                        new SqlParameter("@VisitId", request.VisitId),
+                        new SqlParameter("@DischargeProcessId", request.DischargeProcessId),
+                        new SqlParameter("@UserId", globalValues.userId),
+                        new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                        new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                int resultValue = Convert.ToInt32(result);
+                var (failType, failMessage, failCode) = MapWorkflowErrorCode(resultValue);
+                if (failMessage != null)
+                    return ServiceResult<object>.Failure(failType, failMessage, failCode);
+
+                var current = GetCurrentDischargeProcess(request.VisitId);
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(current.Data, alert.Type, "Process started successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> CompletePatientDischargeProcess(
+            CompletePatientDischargeProcessRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CompletePatientDischargeProcess called. VisitId={request.VisitId}, DischargeProcessId={request.DischargeProcessId}");
+
+                long result = _sqlHelper.RunProcedureInsert(
+                    "U_PatientDischargeProcess",
+                    new IDataParameter[]
+                    {
+                        new SqlParameter("@VisitId", request.VisitId),
+                        new SqlParameter("@DischargeProcessId", request.DischargeProcessId),
+                        new SqlParameter("@UserId", globalValues.userId),
+                        new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                        new SqlParameter("@Remarks", (object)request.Remarks ?? DBNull.Value),
+                        new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                int resultValue = Convert.ToInt32(result);
+                var (failType, failMessage, failCode) = MapWorkflowErrorCode(resultValue);
+                if (failMessage != null)
+                    return ServiceResult<object>.Failure(failType, failMessage, failCode);
+
+                // NOTE: If this ProcessKey requires an existing business operation
+                // (e.g. CLOSE_BILLING -> billing-closed check, NURSING_CLEARANCE -> nursing sign-off),
+                // call the relevant existing repository/service here (or before this call)
+                // as the process-specific handler. The workflow engine itself stays generic.
+
+                var next = GetCurrentDischargeProcess(request.VisitId);
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(next.Data, alert.Type, "Process completed successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> ValidatePatientDischargeProcess(int visitId)
+        {
+            try
+            {
+                _log.Info($"ValidatePatientDischargeProcess called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_ValidatePatientDischargeProcess",
+                    CommandType.StoredProcedure,
+                    new { @VisitId = visitId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "Discharge workflow not initialized for this visit", 404);
+                }
+
+                var row = dataTable.Rows[0];
+                var result = dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                    col => col.ColumnName,
+                    col => row[col] == DBNull.Value ? null : row[col]
+                );
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, "Discharge validation completed", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        /// <summary>
+        /// Shared mapping for U_StartPatientDischargeProcess / U_PatientDischargeProcess result codes.
+        /// Returns (null,null,0) when the code indicates success (>0).
+        /// </summary>
+        private (string Type, string Message, int StatusCode) MapWorkflowErrorCode(int resultValue)
+        {
+            switch (resultValue)
+            {
+                case -1:
+                    return (_messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER").Type,
+                        "This process is not part of the patient's discharge workflow", 400);
+                case -2:
+                    return (_messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED").Type,
+                        "This discharge process has already been completed", 409);
+                case -3:
+                    return (_messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED").Type,
+                        "Previous discharge process is not completed. Only the current process can be executed", 409);
+                case -99:
+                    return (_messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND").Type,
+                        "Server error while processing discharge workflow step", 500);
+                default:
+                    return (null, null, 0);
+            }
+        }
+
+
+      
+
+        public ServiceResult<string> SaveIPDDischarge(SaveIPDDischargeRequest request, AllGlobalValues globalValues)
+        {
+            var connectionString = _configuration.GetConnectionString("ConnectionString");
+            SqlConnection con = new SqlConnection(connectionString);
+            con.Open();
+            var tnx = CustomSqlHelper.getSqlTransaction(con);
+
+            try
+            {
+                _log.Info($"SaveIPDDischarge called. VisitId={request.VisitId}, BedId={request.BedId}, DischargeType={request.DischargeType}");
+
+                // Parse discharge date/time
+                if (!DateTime.TryParse(request.DischargeDate, out DateTime dischargeDate))
+                {
+                    tnx.Rollback();
+                    var alertDate = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<string>.Failure(alertDate.Type, "Invalid DischargeDate format", 400);
+                }
+
+                if (!DateTime.TryParse(request.DischargeTime, out DateTime dischargeTime))
+                {
+                    tnx.Rollback();
+                    var alertTime = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<string>.Failure(alertTime.Type, "Invalid DischargeTime format", 400);
+                }
+
+                // Parse optional death date/time (legacy fields for U_UpdateIPDPatientDischarge)
+                object deathDateParam = DBNull.Value;
+                object deathTimeParam = DBNull.Value;
+
+              
+
+                // ── 1. Update PatientVisitDetails discharge info (common header — unchanged SP) ──
+                _sqlHelper.DML(tnx, "U_UpdateIPDPatientDischarge", CommandType.StoredProcedure, new
+                {
+                    @dischargeDate = dischargeDate.Date,
+                    @dischargeTime = dischargeTime.TimeOfDay,
+                    @dischargeType = request.DischargeType,
+                    @visitId = request.VisitId,
+                    @userId = globalValues.userId,
+                    @IpAddress = globalValues.ipAddress
+                });
+
+                // ── 2. Insert/Update exactly the ONE detail table matching the discharge type ──
+                //     Each IU_*DischargeDetails SP upserts by VisitId (update if exists, else insert)
+
+                if (request.NormalDischargeDetails != null)
+                {
+                    var d = request.NormalDischargeDetails;
+                    DateTime? followUpDate = null;
+                    if (!string.IsNullOrWhiteSpace(d.FollowUpDate) && DateTime.TryParse(d.FollowUpDate, out DateTime fd))
+                        followUpDate = fd.Date;
+
+                    _sqlHelper.DML(tnx, "IU_NormalDischargeDetails", CommandType.StoredProcedure, new
+                    {
+                        @visitId = request.VisitId,
+                        @conditionAtDischarge = d.ConditionAtDischarge ?? (object)DBNull.Value,
+                        @dischargeAdvice = d.DischargeAdvice ?? (object)DBNull.Value,
+                        @followUpDate = (object)followUpDate ?? DBNull.Value,
+                        @followUpDepartmentId = (object)d.FollowUpDepartmentId ?? DBNull.Value,
+                        @followUpDoctorId = (object)d.FollowUpDoctorId ?? DBNull.Value,
+                        @userId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+                    _log.Info($"NormalDischargeDetails saved for VisitId={request.VisitId}");
+                }
+                else if (request.LAMADischargeDetails != null)
+                {
+                    var d = request.LAMADischargeDetails;
+                    DateTime? otpVerifiedOn = null;
+                    if (!string.IsNullOrWhiteSpace(d.OtpVerifiedOn) && DateTime.TryParse(d.OtpVerifiedOn, out DateTime ov))
+                        otpVerifiedOn = ov;
+
+                    _sqlHelper.DML(tnx, "IU_LAMADischargeDetails", CommandType.StoredProcedure, new
+                    {
+                        @visitId = request.VisitId,
+                        @reason = d.Reason ?? (object)DBNull.Value,
+                        @isRiskExplained = (object)d.IsRiskExplained ?? DBNull.Value,
+                        @declarationText = d.DeclarationText ?? (object)DBNull.Value,
+                        @counsellingByDoctorId = (object)d.CounsellingByDoctorId ?? DBNull.Value,
+                        @relativeName = d.RelativeName ?? (object)DBNull.Value,
+                        @relationship = d.Relationship ?? (object)DBNull.Value,
+                        @signatureFilePath = d.SignatureFilePath ?? (object)DBNull.Value,
+                        @isOtpVerified = (object)d.IsOtpVerified ?? DBNull.Value,
+                        @otpVerifiedOn = (object)otpVerifiedOn ?? DBNull.Value,
+                        @userId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+                    _log.Info($"LAMADischargeDetails saved for VisitId={request.VisitId}");
+                }
+                else if (request.TransferDischargeDetails != null)
+                {
+                    var d = request.TransferDischargeDetails;
+
+                    _sqlHelper.DML(tnx, "IU_TransferDischargeDetails", CommandType.StoredProcedure, new
+                    {
+                        @visitId = request.VisitId,
+                        @transferHospitalName = d.TransferHospitalName ?? (object)DBNull.Value,
+                        @transferReason = d.TransferReason ?? (object)DBNull.Value,
+                        @conditionAtTransfer = d.ConditionAtTransfer ?? (object)DBNull.Value,
+                        @isAmbulanceRequired = (object)d.IsAmbulanceRequired ?? DBNull.Value,
+                        @accompanyingStaffUserId = (object)d.AccompanyingStaffUserId ?? DBNull.Value,
+                        @referralLetterFilePath = d.ReferralLetterFilePath ?? (object)DBNull.Value,
+                        @userId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+                    _log.Info($"TransferDischargeDetails saved for VisitId={request.VisitId}");
+                }
+                else if (request.DeathDischargeDetails != null)
+                {
+                    var d = request.DeathDischargeDetails;
+                    DateTime? dateOfDeath = null;
+                    if (!string.IsNullOrWhiteSpace(d.DateOfDeath) && DateTime.TryParse(d.DateOfDeath, out DateTime dod))
+                        dateOfDeath = dod.Date;
+
+                    TimeSpan? timeOfDeath = null;
+                    if (!string.IsNullOrWhiteSpace(d.TimeOfDeath) && DateTime.TryParse(d.TimeOfDeath, out DateTime tod))
+                        timeOfDeath = tod.TimeOfDay;
+
+                    _sqlHelper.DML(tnx, "IU_DeathDischargeDetails", CommandType.StoredProcedure, new
+                    {
+                        @visitId = request.VisitId,
+                        @dateOfDeath = (object)dateOfDeath ?? DBNull.Value,
+                        @timeOfDeath = (object)timeOfDeath ?? DBNull.Value,
+                        @causeOfDeath = d.CauseOfDeath ?? (object)DBNull.Value,
+                        @deathSummary = d.DeathSummary ?? (object)DBNull.Value,
+                        @certificateStatus = d.CertificateStatus ?? (object)DBNull.Value,
+                        @bodyHandoverDetails = d.BodyHandoverDetails ?? (object)DBNull.Value,
+                        @relativeName = d.RelativeName ?? (object)DBNull.Value,
+                        @relationship = d.Relationship ?? (object)DBNull.Value,
+                        @contactNumber = d.ContactNumber ?? (object)DBNull.Value,
+                        @userId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+                    _log.Info($"DeathDischargeDetails saved for VisitId={request.VisitId}");
+                }
+                else if (request.AbscondedDischargeDetails != null)
+                {
+                    var d = request.AbscondedDischargeDetails;
+                    DateTime? lastSeenDate = null;
+                    if (!string.IsNullOrWhiteSpace(d.LastSeenDate) && DateTime.TryParse(d.LastSeenDate, out DateTime lsd))
+                        lastSeenDate = lsd.Date;
+
+                    TimeSpan? lastSeenTime = null;
+                    if (!string.IsNullOrWhiteSpace(d.LastSeenTime) && DateTime.TryParse(d.LastSeenTime, out DateTime lst))
+                        lastSeenTime = lst.TimeOfDay;
+
+                    _sqlHelper.DML(tnx, "IU_AbscondedDischargeDetails", CommandType.StoredProcedure, new
+                    {
+                        @visitId = request.VisitId,
+                        @lastSeenDate = (object)lastSeenDate ?? DBNull.Value,
+                        @lastSeenTime = (object)lastSeenTime ?? DBNull.Value,
+                        @circumstances = d.Circumstances ?? (object)DBNull.Value,
+                        @isStaffInformed = (object)d.IsStaffInformed ?? DBNull.Value,
+                        @isPoliceInformed = (object)d.IsPoliceInformed ?? DBNull.Value,
+                        @remarks = d.Remarks ?? (object)DBNull.Value,
+                        @firNo = d.FIRNo ?? (object)DBNull.Value,
+                        @userId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+                    _log.Info($"AbscondedDischargeDetails saved for VisitId={request.VisitId}");
+                }
+
+                // ── 3. Free up the bed ──────────────────────────────────────────────
+                _sqlHelper.DML(tnx, "U_UpdateBedStatus", CommandType.StoredProcedure, new
+                {
+                    @bedId = request.BedId,
+                    @currentStatus = 0 //BedStatus_Available
+                });
+
+                tnx.Commit();
+                _log.Info($"SaveIPDDischarge committed. VisitId={request.VisitId}, BedId={request.BedId}");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success(
+                    "Patient discharged successfully",
+                    alert.Type,
+                    alert.Message,
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                try { tnx.Rollback(); } catch { /* swallow rollback exception */ }
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+            finally
+            {
+                tnx.Dispose();
+                if (con.State == ConnectionState.Open)
+                    con.Close();
+            }
+        }
+
+
+        public ServiceResult<CreateSupplementaryBillFromMainBillResponse> CreateSupplementaryBillFromMainBill(
+ CreateSupplementaryBillFromMainBillRequest request,
+ AllGlobalValues globalValues)
+        {
+            var connectionString = _configuration.GetConnectionString("ConnectionString");
+            SqlConnection con = new SqlConnection(connectionString);
+            con.Open();
+            var tnx = CustomSqlHelper.getSqlTransaction(con);
+
+            try
+            {
+                _log.Info($"CreateSupplementaryBillFromMainBill called. PatientId={request.VisitDetails.PatientId}, VisitId={request.VisitDetails.VisitId}, BranchId={request.VisitDetails.BranchId}");
+
+                var v = request.VisitDetails;
+                int visitId = v.VisitId;
+
+                decimal totalPaidAmount = 0;
+                if (request.PaymentDetails?.Count > 0)
+                {
+                    totalPaidAmount = request.PaymentDetails.Sum(p => p.Amount);
+                }
+
+                // ── 1. PatientBillDetails ────────────────────────────────────────────
+                var pbd = new PatientBillDetails
+                {
+                    HospId = globalValues.hospId,
+                    BranchId = v.BranchId,
+                    RoleId = v.RoleId,
+                    PatientId = v.PatientId,
+                    VisitId = visitId,
+                    TypeId = 2,                                // 2 = IPD
+                    TotalBillAmount = v.GrossBillAmount,
+                    TotalDiscountPerOnBill = v.TotalDiscPerOnBill,
+                    TotalDiscountAmountOnBill = v.TotalDiscAmtOnBill,
+                    DiscountApprovedById = v.DiscApprovedById > 0 ? v.DiscApprovedById : (int?)null,
+                    DiscountReason = v.DiscountReason,
+                    RoundOff = v.RoundOff,
+                    TotalPayableAmount = v.NetAmount,
+                    TotalPaidAmount = totalPaidAmount,
+                    TotalBalanceAmount = v.NetAmount - totalPaidAmount,
+                    TotalPatientPayableAmount = v.NetAmount,
+                    TotalCorporatePayableAmount = 0,
+                    TotalPatientPaidAmount = totalPaidAmount,
+                    TotalCorporatePaidAmount = 0,
+                    IsSupplementaryBill = 1,
+                    UserId = globalValues.userId,
+                    IpAddress = globalValues.ipAddress
+                };
+
+                int billId = Convert.ToInt32(pbd.Create(_sqlHelper, tnx));
+                _log.Info($"PatientBillDetails created. BillId={billId}");
+
+
+                // ── 2.Update billId in  FinancialTransactions  ─────────────────────────────────────────
+                foreach (var item in request.BillingItems)
+                {
+                    _sqlHelper.DML(
+                    tnx,
+                    "U_UpdateFinancialTransactionsBillId",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @FTId = item.FTId,
+                        @FTDId = item.FTDId,
+                        @billId = billId,
+                        @UserId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    }
+                );
+                }
+
+
+
+                // ── 4. Receipt ───────────────────────────────────────────────────────
+                int receiptId = 0;
+                bool isReceipt = false;
+                if (totalPaidAmount > 0)
+                {
+                    var receipt = new Receipts
+                    {
+                        HospId = globalValues.hospId,
+                        BranchId = v.BranchId,
+                        RoleId = v.RoleId,
+                        FTID = 0,//v.FTId,
+                        VisitId = visitId,
+                        PatientId = v.PatientId,
+                        Amount = totalPaidAmount,
+                        IsCopaymentReceipt = 0,
+                        PlutusTransactionReferenceID = request.PaymentDetails[0].PlutusTransactionReferenceID,
+                        TransactionLogId = request.PaymentDetails[0].TransactionLogId,
+                        UserId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress,
+                        UniqueId = v.UniqueId
+                    };
+
+                    receiptId = Convert.ToInt32(receipt.Create(_sqlHelper, tnx));
+                    _log.Info($"Receipt created. ReceiptId={receiptId}");
+
+                    foreach (var p in request.PaymentDetails)
+                    {
+                        // PaymentModeTypeId 4 = Credit → skip
+                        if (p.PaymentModeTypeId == 4)
+                            continue;
+
+                        if (p.IsPatientAdvanceAmount == 1)
+                            continue;
+
+                        var rpmd = new ReceiptsPaymentModeDetails
+                        {
+                            HospId = globalValues.hospId,
+                            BranchId = v.BranchId,
+                            ReceiptID = receiptId,
+                            Amount = p.Amount,
+                            PaymentModeId = p.PaymentModeId,
+                            BankId = p.BankId > 0 ? p.BankId : (int?)null,
+                            ReferenceNo = p.RefNo,
+                            UserId = globalValues.userId,
+                            IpAddress = globalValues.ipAddress
+                        };
+
+                        rpmd.Create(_sqlHelper, tnx);
+                    }
+
+                    isReceipt = true;
+                }
+
+                tnx.Commit();
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<CreateSupplementaryBillFromMainBillResponse>.Success(
+                    new CreateSupplementaryBillFromMainBillResponse
+                    {
+                        VisitId = visitId,
+                        FTID = 0,
+                        ReceiptId = receiptId,
+                        IsReceipt = isReceipt
+                    },
+                    alert.Type,
+                    "IPD Billing saved successfully",
+                    201
+                );
+            }
+            catch (Exception ex)
+            {
+                try { tnx.Rollback(); } catch { /* swallow rollback exception */ }
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateSupplementaryBillFromMainBillResponse>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+            finally
+            {
+                tnx.Dispose();
+                if (con.State == ConnectionState.Open)
+                    con.Close();
             }
         }
     }

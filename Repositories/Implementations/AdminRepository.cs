@@ -10612,5 +10612,501 @@ namespace HISWEBAPI.Repositories.Implementations
                 return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
             }
         }
+
+        private const string CACHE_KEY_DischargeProcessMaster_All = "_DischargeProcessMaster_All";
+
+        public ServiceResult<object> GetDischargeProcessMaster(int? isActive)
+        {
+            try
+            {
+                _log.Info($"GetDischargeProcessMaster called. IsActive={isActive?.ToString() ?? "All"}");
+
+                var cachedData = _distributedCache.GetString(CACHE_KEY_DischargeProcessMaster_All);
+                List<Dictionary<string, object>> allItems;
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    allItems = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData);
+                }
+                else
+                {
+                    var dataTable = _sqlHelper.GetDataTable("S_DischargeProcessMaster", CommandType.StoredProcedure);
+                    allItems = dataTable?.AsEnumerable().Select(row =>
+                        dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                            col => col.ColumnName,
+                            col => row[col] == DBNull.Value ? null : row[col]
+                        )
+                    ).ToList() ?? new List<Dictionary<string, object>>();
+
+                    if (allItems.Any())
+                    {
+                        var serialized = JsonSerializer.Serialize(allItems);
+                        var cacheOptions = new DistributedCacheEntryOptions { AbsoluteExpiration = null, SlidingExpiration = null };
+                        _distributedCache.SetString(CACHE_KEY_DischargeProcessMaster_All, serialized, cacheOptions);
+                        _log.Info($"DischargeProcessMaster cached permanently. Count={allItems.Count}");
+                    }
+                }
+
+                if (isActive.HasValue)
+                {
+                    allItems = allItems.Where(row =>
+                        row.TryGetValue("IsActive", out var val) && val != null && val.ToString() == isActive.Value.ToString()
+                    ).ToList();
+                }
+
+                if (!allItems.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No discharge processes found", 404);
+                }
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(allItems, success.Type, $"{allItems.Count} discharge process(es) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetDischargeProcessMasterById(int dischargeProcessId)
+        {
+            try
+            {
+                _log.Info($"GetDischargeProcessMasterById called. DischargeProcessId={dischargeProcessId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_DischargeProcessMasterById",
+                    CommandType.StoredProcedure,
+                    new { @DischargeProcessId = dischargeProcessId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "Discharge process not found", 404);
+                }
+
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).First();
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, "Discharge process retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<CreateUpdateDischargeProcessMasterResponse> CreateUpdateDischargeProcessMaster(
+            CreateUpdateDischargeProcessMasterRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CreateUpdateDischargeProcessMaster called. DischargeProcessId={request.DischargeProcessId}, ProcessKey={request.ProcessKey}");
+
+                long result = _sqlHelper.RunProcedureInsert(
+                    "IU_DischargeProcessMaster",
+                    new IDataParameter[]
+                    {
+                        new SqlParameter("@DischargeProcessId", request.DischargeProcessId),
+                        new SqlParameter("@ProcessKey", request.ProcessKey),
+                        new SqlParameter("@ProcessName", request.ProcessName),
+                        new SqlParameter("@IsMandatory", request.IsMandatory),
+                        new SqlParameter("@FaIconId ", request.FaIconId),
+                        new SqlParameter("@IsActive", request.IsActive),
+                        new SqlParameter("@IsSystemProcess", request.IsSystemProcess),
+                        new SqlParameter("@UserId", globalValues.userId),
+                        new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                        new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                int resultValue = Convert.ToInt32(result);
+
+                if (resultValue == -1)
+                {
+                    var dupAlert = _messageService.GetMessageAndTypeByAlertCode("RECORD_ALREADY_EXISTS");
+                    return ServiceResult<CreateUpdateDischargeProcessMasterResponse>.Failure(
+                        dupAlert.Type, "ProcessKey already exists", 409);
+                }
+
+                if (resultValue == -2)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<CreateUpdateDischargeProcessMasterResponse>.Failure(
+                        alert.Type, "Discharge process not found for update", 404);
+                }
+
+                if (resultValue > 0)
+                {
+                    _distributedCache.Remove(CACHE_KEY_DischargeProcessMaster_All);
+                    GlobalFunctions.ClearCacheByPattern(_configuration, "_UserDischargeProcessMapping_*");
+
+                    _log.Info($"Cleared DischargeProcessMaster cache. DischargeProcessId={resultValue}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.DischargeProcessId == 0 ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY");
+
+                    return ServiceResult<CreateUpdateDischargeProcessMasterResponse>.Success(
+                        new CreateUpdateDischargeProcessMasterResponse { DischargeProcessId = resultValue },
+                        alert.Type, alert.Message, request.DischargeProcessId == 0 ? 201 : 200);
+                }
+
+                var failAlert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateDischargeProcessMasterResponse>.Failure(failAlert.Type, failAlert.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateDischargeProcessMasterResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateDischargeProcessSequence(
+            UpdateDischargeProcessSequenceRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateDischargeProcessSequence called. Count={request.Sequences.Count}");
+
+                foreach (var item in request.Sequences)
+                {
+                    _sqlHelper.DML(
+                        "U_DischargeProcessSequence",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @DischargeProcessId = item.DischargeProcessId,
+                            @SequenceNo = item.SequenceNo,
+                            @UserId = globalValues.userId,
+                            @IpAddress = globalValues.ipAddress
+                        });
+                }
+
+                _distributedCache.Remove(CACHE_KEY_DischargeProcessMaster_All);
+                _log.Info("Cleared DischargeProcessMaster cache after sequence update.");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success("Sequence updated successfully", alert.Type, alert.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        // ─── Corporate Mapping ─────────────────────────────────────────────
+
+        public ServiceResult<string> SaveDischargeProcessCorporateMapping(
+            SaveDischargeProcessCorporateMappingRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"SaveDischargeProcessCorporateMapping called. DischargeProcessId={request.DischargeProcessId}, Count={request.CorporateIds.Count}");
+
+                _sqlHelper.DML(
+                    "D_DischargeProcessCorporateMapping",
+                    CommandType.StoredProcedure,
+                    new { @DischargeProcessId = request.DischargeProcessId });
+
+                foreach (var corporateId in request.CorporateIds)
+                {
+                    _sqlHelper.DML(
+                        "I_DischargeProcessCorporateMapping",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @DischargeProcessId = request.DischargeProcessId,
+                            @CorporateId = corporateId,
+                            @UserId = globalValues.userId,
+                            @IpAddress = globalValues.ipAddress
+                        });
+                }
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<string>.Success("Corporate mapping saved successfully", alert.Type, alert.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetDischargeProcessCorporateMapping(int? dischargeProcessId)
+        {
+            try
+            {
+                _log.Info($"GetDischargeProcessCorporateMapping called. DischargeProcessId={dischargeProcessId?.ToString() ?? "All"}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_DischargeProcessCorporateMapping",
+                    CommandType.StoredProcedure,
+                    new { @DischargeProcessId = dischargeProcessId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No corporate mappings found", 404);
+                }
+
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, $"{result.Count} mapping(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+
+
+        public ServiceResult<string> SaveUpdateUserDischargeProcessMapping(
+    SaveUserDischargeProcessMappingRequest request,
+    AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"SaveUpdateUserDischargeProcessMapping called. TypeId={request.TypeId}, UserId={request.UserId}, BranchId={request.BranchId}, IsFirst={request.IsFirst}");
+
+                // Delete existing user discharge process mappings if IsFirst = 1
+                if (request.IsFirst == 1)
+                {
+                    _sqlHelper.DML("D_DeleteUserDischargeProcessMapping", CommandType.StoredProcedure, new
+                    {
+                        @UserId = request.UserId,
+                        @TypeId = request.TypeId,
+                        @BranchId = request.BranchId
+                    },
+                    new
+                    {
+                        result = 0
+                    });
+
+                    _log.Info($"Deleted existing user discharge process mapping for TypeId={request.TypeId}, UserId={request.UserId}, BranchId={request.BranchId}");
+                }
+
+                string clearCacheKey = $"_UserDischargeProcessMapping_{request.BranchId}_{request.TypeId}_{request.UserId}";
+
+                // If mapping list is empty or null, only delete operation was needed
+                if (request.UserDischargeProcessMappings == null || !request.UserDischargeProcessMappings.Any())
+                {
+                    _distributedCache.Remove(clearCacheKey);
+                    _log.Info($"Cleared cache for key: {clearCacheKey}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.IsFirst == 1 ? "DATA_DELETED_SUCCESSFULLY" : "DATA_SAVED_SUCCESSFULLY"
+                    );
+
+                    return ServiceResult<string>.Success(
+                        request.IsFirst == 1 ? "User discharge process mappings deleted successfully" : "No discharge process mappings to save",
+                        alert.Type,
+                        alert.Message,
+                        200
+                    );
+                }
+
+                // Filter out items with DischargeProcessId = 0
+                var validMappings = request.UserDischargeProcessMappings.Where(m => m.DischargeProcessId != 0).ToList();
+
+                if (!validMappings.Any())
+                {
+                    _distributedCache.Remove(clearCacheKey);
+                    _log.Info($"Cleared cache for key: {clearCacheKey}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.IsFirst == 1 ? "DATA_DELETED_SUCCESSFULLY" : "DATA_SAVED_SUCCESSFULLY"
+                    );
+
+                    return ServiceResult<string>.Success(
+                        request.IsFirst == 1 ? "User discharge process mappings deleted successfully" : "No valid discharge process mappings to save",
+                        alert.Type,
+                        alert.Message,
+                        200
+                    );
+                }
+
+                // Validate consistency of all items with parent request
+                bool isConsistent = validMappings.All(x =>
+                    x.TypeId == request.TypeId &&
+                    x.UserId == request.UserId &&
+                    x.BranchId == request.BranchId);
+
+                if (!isConsistent)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    _log.Warn("Inconsistent TypeId, UserId, or BranchId in user discharge process mapping list.");
+
+                    return ServiceResult<string>.Failure(
+                        alert.Type,
+                        "All user discharge process mapping items must have the same TypeId, UserId, and BranchId as the request",
+                        400
+                    );
+                }
+
+                // Insert new user discharge process mappings
+                int insertedCount = 0;
+                foreach (var mapping in validMappings)
+                {
+                    var result = _sqlHelper.DML("IU_UserDischargeProcessMapping", CommandType.StoredProcedure, new
+                    {
+                        @HospId = globalValues.hospId,
+                        @UserId = mapping.UserId,
+                        @TypeId = mapping.TypeId,
+                        @BranchId = mapping.BranchId,
+                        @DischargeProcessId = mapping.DischargeProcessId,
+                        @CreatedBy = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    },
+                    new
+                    {
+                        result = 0
+                    });
+
+                    if (result > 0)
+                    {
+                        insertedCount++;
+                    }
+                }
+
+                _distributedCache.Remove(clearCacheKey);
+                _log.Info($"Cleared cache for key: {clearCacheKey}");
+                _log.Info($"Inserted {insertedCount} user discharge process mapping records for UserId={request.UserId}");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<string>.Success(
+                    $"User discharge process mapping updated successfully. {insertedCount} process(es) assigned.",
+                    alert1.Type,
+                    alert1.Message,
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
+        public ServiceResult<object> GetUserWiseDischargeProcessMapping(
+            int branchId,
+            int typeId,
+            int userId)
+        {
+            try
+            {
+                _log.Info($"GetUserWiseDischargeProcessMapping called. BranchId={branchId}, TypeId={typeId}, UserId={userId}");
+
+                // Generate dynamic cache key based on branchId, typeId, and userId
+                string cacheKey = $"_UserDischargeProcessMapping_{branchId}_{typeId}_{userId}";
+
+                // Try to get data from cache
+                var cachedData = _distributedCache.GetString(cacheKey);
+                List<Dictionary<string, object>> mappings;
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    _log.Info($"UserDischargeProcessMapping data retrieved from cache. Key={cacheKey}");
+                    mappings = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData);
+                }
+                else
+                {
+                    _log.Info($"UserDischargeProcessMapping cache miss. Fetching data from database. Key={cacheKey}");
+
+                    var dataTable = _sqlHelper.GetDataTable(
+                        "S_GetRemainingAssignDischargeProcessForUserAuthorization",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @BranchId = branchId,
+                            @typeId = typeId,
+                            @UserId = userId
+                        }
+                    );
+
+                    // Raw DataTable -> List<Dictionary<string,object>> (no model mapping),
+                    // so any new columns added to the SP automatically flow through
+                    mappings = dataTable?.AsEnumerable().Select(row =>
+                        dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                            col => col.ColumnName,
+                            col => row[col] == DBNull.Value ? null : row[col]
+                        )
+                    ).ToList() ?? new List<Dictionary<string, object>>();
+
+                    // Store data in cache with no expiration
+                    if (mappings.Any())
+                    {
+                        var serialized = System.Text.Json.JsonSerializer.Serialize(mappings);
+                        var cacheOptions = new DistributedCacheEntryOptions
+                        {
+                            // No expiration - cache persists until manually cleared
+                            AbsoluteExpiration = null,
+                            SlidingExpiration = null
+                        };
+                        _distributedCache.SetString(cacheKey, serialized, cacheOptions);
+                        _log.Info($"UserDischargeProcessMapping data cached permanently. Key={cacheKey}, Count={mappings.Count}");
+                    }
+                }
+
+                if (!mappings.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No user discharge process mapping found for BranchId={branchId}, TypeId={typeId}, UserId={userId}");
+
+                    return ServiceResult<object>.Failure(
+                        alert.Type,
+                        alert.Message,
+                        404
+                    );
+                }
+
+                _log.Info($"Retrieved {mappings.Count} user discharge process mapping records (Granted + Remaining) from cache");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    mappings,
+                    alert1.Type,
+                    $"{mappings.Count} user discharge process mapping(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
     }
 }

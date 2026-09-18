@@ -1,18 +1,22 @@
-﻿using System;
+﻿using HISWEBAPI.Data.Helpers;
+using HISWEBAPI.DTO;
+using HISWEBAPI.Exceptions;
+using HISWEBAPI.Models;
+using HISWEBAPI.Repositories.Interfaces;
+using HISWEBAPI.Services;
+using HISWEBAPI.Services.Implementations;
+using HISWEBAPI.Services.Interfaces;
+using HISWEBAPI.Utilities;
+using log4net;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
-using HISWEBAPI.Repositories.Interfaces;
-using HISWEBAPI.Data.Helpers;
-using HISWEBAPI.Models;
-using HISWEBAPI.DTO;
-using HISWEBAPI.Services;
-using Microsoft.Extensions.Logging;
-using HISWEBAPI.Exceptions;
 using System.Reflection;
-using log4net;
-using Microsoft.Extensions.Caching.Distributed;
-using StackExchange.Redis;
 
 namespace HISWEBAPI.Repositories.Implementations
 {
@@ -22,18 +26,24 @@ namespace HISWEBAPI.Repositories.Implementations
         private readonly IResponseMessageService _messageService;
         private readonly IDistributedCache _distributedCache;
         private readonly IConfiguration _configuration;
+        private readonly ISmsService _smsService;
+        private readonly IEmailService _emailService;
         private static readonly ILog _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         public HomeRepository(
             ICustomSqlHelper sqlHelper,
             IResponseMessageService messageService,
             IDistributedCache distributedCache,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            ISmsService smsService,
+            IEmailService emailService)
         {
             _sqlHelper = sqlHelper;
             _messageService = messageService;
             _distributedCache = distributedCache;
             _configuration = configuration;
+            _smsService = smsService;
+            _emailService = emailService;
         }
 
         public ServiceResult<string> ClearAllCache()
@@ -282,6 +292,119 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
+        private const string CACHE_KEY_PredefineQueryMaster_All = "_PredefineQueryMaster_All";
+
+        public ServiceResult<object> GetPredefineQueryResult(string queryName, string filter1, string filter2)
+        {
+            try
+            {
+                _log.Info($"GetPredefineQueryResult called. QueryName={queryName}, Filter1={filter1 ?? "null"}, Filter2={filter2 ?? "null"}");
+
+                // ── 1. Load & cache the QueryName -> SQLQuery master list (reference data) ──
+                var cachedData = _distributedCache.GetString(CACHE_KEY_PredefineQueryMaster_All);
+                List<Dictionary<string, object>> allQueries;
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    _log.Info($"PredefineQueryMaster data retrieved from cache. Key={CACHE_KEY_PredefineQueryMaster_All}");
+                    allQueries = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData);
+                }
+                else
+                {
+                    _log.Info($"PredefineQueryMaster cache miss. Fetching from database. Key={CACHE_KEY_PredefineQueryMaster_All}");
+
+                    var masterTable = _sqlHelper.GetDataTable(
+                        "SELECT QueryId, QueryName, SQLQuery FROM PredefineQueryMaster where isActive=1",
+                        CommandType.Text
+                    );
+
+                    allQueries = masterTable.ToRawList();
+
+                    if (allQueries.Any())
+                    {
+                        var serialized = System.Text.Json.JsonSerializer.Serialize(allQueries);
+                        var cacheOptions = new DistributedCacheEntryOptions
+                        {
+                            AbsoluteExpiration = null,
+                            SlidingExpiration = null
+                        };
+                        _distributedCache.SetString(CACHE_KEY_PredefineQueryMaster_All, serialized, cacheOptions);
+                        _log.Info($"PredefineQueryMaster data cached permanently. Key={CACHE_KEY_PredefineQueryMaster_All}, Count={allQueries.Count}");
+                    }
+                }
+
+                // ── 2. Resolve SQLQuery text for the requested QueryName (case-insensitive) ──
+                var queryRow = allQueries.FirstOrDefault(row =>
+                    row.TryGetValue("QueryName", out var val) &&
+                    val != null &&
+                    val.ToString().Equals(queryName, StringComparison.OrdinalIgnoreCase));
+
+                if (queryRow == null)
+                {
+                    var alertNotFound = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Warn($"No predefined query found for QueryName={queryName}");
+                    return ServiceResult<object>.Failure(
+                        alertNotFound.Type,
+                        $"No predefined query found for QueryName: {queryName}",
+                        404
+                    );
+                }
+
+                string sqlQueryText = queryRow["SQLQuery"]?.ToString();
+
+                if (string.IsNullOrWhiteSpace(sqlQueryText))
+                {
+                    var alertEmpty = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Warn($"SQLQuery is empty for QueryName={queryName}");
+                    return ServiceResult<object>.Failure(
+                        alertEmpty.Type,
+                        $"No SQL text configured for QueryName: {queryName}",
+                        404
+                    );
+                }
+
+                // ── 3. Execute the resolved query with the optional filters ─────────────────
+                var resultTable = _sqlHelper.GetDataTable(
+                    sqlQueryText,
+                    CommandType.Text,
+                    new
+                    {
+                        filter1 = string.IsNullOrWhiteSpace(filter1) ? (object)DBNull.Value : filter1,
+                        filter2 = string.IsNullOrWhiteSpace(filter2) ? (object)DBNull.Value : filter2
+                    }
+                );
+
+                var result = resultTable.ToRawList();
+
+                if (!result.Any())
+                {
+                    var alertNoRows = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"Predefined query '{queryName}' returned no rows.");
+                    return ServiceResult<object>.Failure(
+                        alertNoRows.Type,
+                        "No data found for the given query",
+                        404
+                    );
+                }
+
+                _log.Info($"GetPredefineQueryResult retrieved {result.Count} row(s) for QueryName={queryName}");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    result,
+                    alert1.Type,
+                    $"{result.Count} record(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
         public ServiceResult<AllGlobalValues> GetAllGlobalValues()
         {
             try
@@ -308,6 +431,254 @@ namespace HISWEBAPI.Repositories.Implementations
                     500
                 );
             }
+        }
+
+
+        public ServiceResult<MobileVerificationOtpResponseData> SendMobileVerificationOtp(SendMobileVerificationOtpRequest request)
+        {
+            try
+            {
+                _log.Info($"SendMobileVerificationOtp called. MobileNumber={request.MobileNumber}");
+
+                string otp = GenerateOtp();
+
+                var result = _sqlHelper.GetDataTable(
+                    "IU_StoreMobileVerificationOtp",
+                    CommandType.StoredProcedure,
+                    new { MobileNumber = request.MobileNumber, Otp = otp, ExpiryMinutes = 5 }
+                );
+
+                int resultValue = (result != null && result.Rows.Count > 0)
+                    ? Convert.ToInt32(result.Rows[0]["Result"])
+                    : 0;
+
+                if (resultValue != 1)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("OTP_GENERATION_FAILED");
+                    _log.Error($"Failed to store mobile verification OTP. MobileNumber={request.MobileNumber}");
+                    return ServiceResult<MobileVerificationOtpResponseData>.Failure(alert.Type, alert.Message, 500);
+                }
+
+                bool smsSent = _smsService.SendOtp(request.MobileNumber, otp);
+                if (!smsSent)
+                    _log.Warn($"OTP stored but SMS failed for MobileNumber={request.MobileNumber}");
+
+                string mobileHint = GenerateContactHint(request.MobileNumber);
+                var responseData = new MobileVerificationOtpResponseData { MobileHint = mobileHint };
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OTP_SENT_SMS");
+                _log.Info($"Mobile verification OTP sent successfully. MobileNumber={request.MobileNumber}");
+
+                return ServiceResult<MobileVerificationOtpResponseData>.Success(
+                    responseData, alert1.Type, $"{alert1.Message} to {mobileHint}", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<MobileVerificationOtpResponseData>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> VerifyMobileVerificationOtp(VerifyMobileVerificationOtpRequest request)
+        {
+            try
+            {
+                _log.Info($"VerifyMobileVerificationOtp called. MobileNumber={request.MobileNumber}");
+
+                var (result, message) = VerifyMobileOtpInternal(request.MobileNumber, request.Otp);
+
+                switch (result)
+                {
+                    case 1:
+                        var alert = _messageService.GetMessageAndTypeByAlertCode("OTP_VERIFIED"); // was "MOBILE_VERIFIED"
+                        _log.Info($"Mobile number verified successfully. MobileNumber={request.MobileNumber}");
+                        return ServiceResult<string>.Success("Mobile number verified successfully", alert.Type, alert.Message, 200);
+
+                    case -1:
+                    case -3:
+                        var alert2 = _messageService.GetMessageAndTypeByAlertCode("OTP_VALIDATION_FAILED");
+                        _log.Warn($"Mobile OTP validation failed for MobileNumber={request.MobileNumber}: {message}");
+                        return ServiceResult<string>.Failure(alert2.Type, alert2.Message, 400);
+
+                    case -6:
+                        var alert3 = _messageService.GetMessageAndTypeByAlertCode("INVALID_OTP");
+                        _log.Warn($"Invalid mobile OTP entered for MobileNumber={request.MobileNumber}");
+                        return ServiceResult<string>.Failure(alert3.Type, alert3.Message, 400);
+
+                    default:
+                        var alert4 = _messageService.GetMessageAndTypeByAlertCode("OTP_VERIFICATION_ERROR");
+                        _log.Error($"Unknown error verifying mobile OTP for MobileNumber={request.MobileNumber}. Code={result}");
+                        return ServiceResult<string>.Failure(alert4.Type, alert4.Message, 500);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<EmailVerificationOtpResponseData> SendEmailVerificationOtp(SendEmailVerificationOtpRequest request)
+        {
+            try
+            {
+                _log.Info($"SendEmailVerificationOtp called. Email={request.Email}");
+
+                string otp = GenerateOtp();
+
+                var result = _sqlHelper.GetDataTable(
+                    "IU_StoreEmailVerificationOtp",
+                    CommandType.StoredProcedure,
+                    new { Email = request.Email, Otp = otp, ExpiryMinutes = 5 }
+                );
+
+                int resultValue = (result != null && result.Rows.Count > 0)
+                    ? Convert.ToInt32(result.Rows[0]["Result"])
+                    : 0;
+
+                if (resultValue != 1)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("OTP_GENERATION_FAILED");
+                    _log.Error($"Failed to store email verification OTP. Email={request.Email}");
+                    return ServiceResult<EmailVerificationOtpResponseData>.Failure(alert.Type, alert.Message, 500);
+                }
+
+                bool emailSent = _emailService.SendOtpEmail(request.Email, otp, "Email Verification").GetAwaiter().GetResult();
+                if (!emailSent)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("EMAIL_SEND_FAILED");
+                    _log.Error($"Failed to send verification email to: {request.Email}");
+                    return ServiceResult<EmailVerificationOtpResponseData>.Failure(alert.Type, alert.Message, 500);
+                }
+
+                string emailHint = GenerateEmailHint(request.Email);
+                var responseData = new EmailVerificationOtpResponseData { EmailHint = emailHint };
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OTP_SENT_EMAIL");
+                _log.Info($"Email verification OTP sent successfully. Email={request.Email}");
+
+                return ServiceResult<EmailVerificationOtpResponseData>.Success(
+                    responseData, alert1.Type, $"{alert1.Message} to {emailHint}", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<EmailVerificationOtpResponseData>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> VerifyEmailVerificationOtp(VerifyEmailVerificationOtpRequest request)
+        {
+            try
+            {
+                _log.Info($"VerifyEmailVerificationOtp called. Email={request.Email}");
+
+                var (result, message) = VerifyEmailOtpInternal(request.Email, request.Otp);
+
+                switch (result)
+                {
+                    case 1:
+                        var alert = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VERIFIED"); // was "EMAIL_VERIFIED"
+                        _log.Info($"Email verified successfully. Email={request.Email}");
+                        return ServiceResult<string>.Success("Email verified successfully", alert.Type, alert.Message, 200);
+
+                    case -1:
+                    case -3:
+                        var alert2 = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VALIDATION_FAILED");
+                        _log.Warn($"Email OTP validation failed for Email={request.Email}: {message}");
+                        return ServiceResult<string>.Failure(alert2.Type, alert2.Message, 400);
+
+                    case -6:
+                        var alert3 = _messageService.GetMessageAndTypeByAlertCode("INVALID_EMAIL_OTP");
+                        _log.Warn($"Invalid email OTP entered for Email={request.Email}");
+                        return ServiceResult<string>.Failure(alert3.Type, alert3.Message, 400);
+
+                    default:
+                        var alert4 = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VERIFICATION_ERROR");
+                        _log.Error($"Unknown error verifying email OTP for Email={request.Email}. Code={result}");
+                        return ServiceResult<string>.Failure(alert4.Type, alert4.Message, 500);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        // ── Internal helpers ─────────────────────────────────────────────────
+
+        private (int result, string message) VerifyMobileOtpInternal(string mobileNumber, string otp)
+        {
+            SqlParameter[] parameters = new SqlParameter[]
+            {
+        new SqlParameter("@MobileNumber", mobileNumber),
+        new SqlParameter("@Otp", otp),
+        new SqlParameter("@ExpiryMinutes", 5),
+        new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output },
+        new SqlParameter("@Message", SqlDbType.NVarChar, 255) { Direction = ParameterDirection.Output }
+            };
+
+            _sqlHelper.RunProcedure("U_VerifyMobileVerificationOtp", parameters);
+
+            int result = parameters[3].Value != DBNull.Value ? Convert.ToInt32(parameters[3].Value) : 0;
+            string message = parameters[4].Value != DBNull.Value ? parameters[4].Value.ToString() : "Unknown error";
+
+            return (result, message);
+        }
+
+        private (int result, string message) VerifyEmailOtpInternal(string email, string otp)
+        {
+            SqlParameter[] parameters = new SqlParameter[]
+            {
+        new SqlParameter("@Email", email),
+        new SqlParameter("@Otp", otp),
+        new SqlParameter("@ExpiryMinutes", 5),
+        new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output },
+        new SqlParameter("@Message", SqlDbType.NVarChar, 255) { Direction = ParameterDirection.Output }
+            };
+
+            _sqlHelper.RunProcedure("U_VerifyEmailVerificationOtp", parameters);
+
+            int result = parameters[3].Value != DBNull.Value ? Convert.ToInt32(parameters[3].Value) : 0;
+            string message = parameters[4].Value != DBNull.Value ? parameters[4].Value.ToString() : "Unknown error";
+
+            return (result, message);
+        }
+
+        private string GenerateOtp()
+        {
+            Random random = new Random();
+            return random.Next(100000, 999999).ToString();
+        }
+
+        private string GenerateContactHint(string contact)
+        {
+            if (string.IsNullOrEmpty(contact)) return string.Empty;
+            int length = contact.Length;
+            if (length < 4) return new string('*', length);
+            string first2 = contact.Substring(0, 2);
+            string last2 = contact.Substring(length - 2, 2);
+            string middle = new string('*', length - 4);
+            return $"{first2}{middle}{last2}";
+        }
+
+        private string GenerateEmailHint(string email)
+        {
+            if (string.IsNullOrEmpty(email)) return string.Empty;
+            var parts = email.Split('@');
+            if (parts.Length != 2) return email;
+            string localPart = parts[0];
+            string domain = parts[1];
+            if (localPart.Length <= 2) return $"{new string('*', localPart.Length)}@{domain}";
+            string first2 = localPart.Substring(0, 2);
+            string lastChar = localPart.Substring(localPart.Length - 1, 1);
+            string middle = new string('*', localPart.Length - 3);
+            return $"{first2}{middle}{lastChar}@{domain}";
         }
 
 
@@ -1096,7 +1467,76 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
+        public ServiceResult<UploadDocumentFromFileManagerResponse> UploadDocument(
+            UploadDocumentFromFileManagerRequest request,
+            AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UploadDocument called. FileName={request?.File?.FileName}");
 
+                // File select hua ya nahi check karna
+                if (request.File == null || request.File.Length == 0)
+                {
+                    _log.Warn("File is null or empty");
+                    var alertEmpty = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<UploadDocumentFromFileManagerResponse>.Failure(
+                        alertEmpty.Type,
+                        "File is required",
+                        400
+                    );
+                }
+
+                _log.Info($"Processing file: {request.File.FileName}, Size: {request.File.Length} bytes");
+
+                // FileUploadHelper appsettings ke DMS:RootPath, DMS:AllowedExtensions, DMS:MaxFileSizeMB
+                // khud se use karta hai — UploadedDocument subfolder me save hoga
+                var fileUploadHelper = new FileUploadHelper(_configuration);
+                var (uploadSuccess, filePath, uploadError) = fileUploadHelper.UploadFile(
+                    request.File,
+                    "UploadedDocument"
+                );
+
+                if (!uploadSuccess)
+                {
+                    _log.Error($"Document upload failed: {uploadError}");
+                    var alertUpload = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<UploadDocumentFromFileManagerResponse>.Failure(
+                        alertUpload.Type,
+                        $"Document upload failed: {uploadError}",
+                        400
+                    );
+                }
+
+                _log.Info($"Document uploaded successfully: {filePath}");
+
+                var response = new UploadDocumentFromFileManagerResponse
+                {
+                    FileName = Path.GetFileName(filePath),
+                    FilePath = filePath,
+                    FileExtension = Path.GetExtension(filePath)?.TrimStart('.'),
+                    FileSizeMB = Math.Round(request.File.Length / (1024.0 * 1024.0), 2)
+                };
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<UploadDocumentFromFileManagerResponse>.Success(
+                    response,
+                    alert.Type,
+                    alert.Message,
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<UploadDocumentFromFileManagerResponse>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
 
         public ServiceResult<FileStreamResult> GetFile(string filePath)
         {
@@ -2842,6 +3282,42 @@ namespace HISWEBAPI.Repositories.Implementations
         }
 
 
+        public ServiceResult<string> UpdateFavoriteBillingTab(UpdateFavoriteBillingTabRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateFavoriteBillingTab called. BranchId={request.BranchId}, RoleId={request.RoleId}, TabId={request.TabId}, UserId={globalValues.userId}");
+
+                _sqlHelper.DML(
+                    "U_UpdateFavoriteBillingTabs",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @userId = globalValues.userId,
+                        @branchId = request.BranchId,
+                        @roleId = request.RoleId,
+                        @tabId = request.TabId
+                    }
+                );
+
+                _log.Info($"Favorite billing tab updated successfully. UserId={globalValues.userId}, TabId={request.TabId}");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success(
+                    "Favorite billing tab updated successfully",
+                    alert.Type,
+                    alert.Message,
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
         public ServiceResult<object> GetAssignBranchRight(int branchId)
         {
             try
@@ -2963,6 +3439,52 @@ namespace HISWEBAPI.Repositories.Implementations
 
 
 
+        public ServiceResult<IEnumerable<Dictionary<string, object>>> GetReceiptPaymentDetails(int receiptId)
+        {
+            try
+            {
+                _log.Info($"GetReceiptPaymentDetails called. ReceiptId={receiptId}");
 
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetReceiptPaymentDetails",
+                    CommandType.StoredProcedure,
+                    new { ReceiptId = receiptId }
+                );
+
+                var result = dataTable.ToRawList();
+
+                if (!result.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No receipt payment details found for ReceiptId={receiptId}");
+                    return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                        alert.Type,
+                        $"No payment details found for ReceiptId: {receiptId}",
+                        404
+                    );
+                }
+
+                _log.Info($"Retrieved {result.Count} receipt payment detail(s) for ReceiptId={receiptId}");
+
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Success(
+                    result,
+                    "Info",
+                    $"{result.Count} payment detail(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
+      
     }
 }

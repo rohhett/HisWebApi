@@ -5692,5 +5692,263 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+
+        [HttpGet("getDischargeProcessMaster")]
+        [Authorize]
+        public IActionResult GetDischargeProcessMaster([FromQuery] int? isActive = null)
+        {
+            _log.Info($"GetDischargeProcessMaster called. IsActive={isActive?.ToString() ?? "All"}");
+
+            if (isActive.HasValue && isActive.Value != 0 && isActive.Value != 1)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "IsActive must be 0, 1, or null (All)", errors = new { isActive } });
+            }
+
+            var serviceResult = _adminRepository.GetDischargeProcessMaster(isActive);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getDischargeProcessMasterById")]
+        [Authorize]
+        public IActionResult GetDischargeProcessMasterById([FromQuery] int dischargeProcessId)
+        {
+            _log.Info($"GetDischargeProcessMasterById called. DischargeProcessId={dischargeProcessId}");
+
+            if (dischargeProcessId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "DischargeProcessId must be greater than 0", errors = new { dischargeProcessId } });
+            }
+
+            var serviceResult = _adminRepository.GetDischargeProcessMasterById(dischargeProcessId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("createUpdateDischargeProcessMaster")]
+        [Authorize]
+        public IActionResult CreateUpdateDischargeProcessMaster([FromBody] CreateUpdateDischargeProcessMasterRequest request)
+        {
+            _log.Info($"CreateUpdateDischargeProcessMaster called. DischargeProcessId={request.DischargeProcessId}, ProcessKey={request.ProcessKey}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.CreateUpdateDischargeProcessMaster(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateDischargeProcessSequence")]
+        [Authorize]
+        public IActionResult UpdateDischargeProcessSequence([FromBody] UpdateDischargeProcessSequenceRequest request)
+        {
+            _log.Info($"UpdateDischargeProcessSequence called. Count={request?.Sequences?.Count ?? 0}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var duplicateSeq = request.Sequences.GroupBy(s => s.SequenceNo).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            if (duplicateSeq.Any())
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "Duplicate SequenceNo values are not allowed", errors = new { duplicateSeq } });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.UpdateDischargeProcessSequence(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        // ─── Corporate Mapping ─────────────────────────────────────────────
+
+        [HttpPost("saveDischargeProcessCorporateMapping")]
+        [Authorize]
+        public IActionResult SaveDischargeProcessCorporateMapping([FromBody] SaveDischargeProcessCorporateMappingRequest request)
+        {
+            _log.Info($"SaveDischargeProcessCorporateMapping called. DischargeProcessId={request.DischargeProcessId}, Count={request?.CorporateIds?.Count ?? 0}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            if (request.CorporateIds != null && request.CorporateIds.Any(id => id <= 0))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "All CorporateIds must be greater than 0" });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.SaveDischargeProcessCorporateMapping(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getDischargeProcessCorporateMapping")]
+        [Authorize]
+        public IActionResult GetDischargeProcessCorporateMapping([FromQuery] int? dischargeProcessId = null)
+        {
+            _log.Info($"GetDischargeProcessCorporateMapping called. DischargeProcessId={dischargeProcessId?.ToString() ?? "All"}");
+
+            var serviceResult = _adminRepository.GetDischargeProcessCorporateMapping(dischargeProcessId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("saveUpdateUserDischargeProcessMapping")]
+        [Authorize]
+        public IActionResult SaveUpdateUserDischargeProcessMapping([FromBody] SaveUserDischargeProcessMappingRequest request)
+        {
+            _log.Info($"SaveUpdateUserDischargeProcessMapping called. TypeId={request.TypeId}, UserId={request.UserId}, BranchId={request.BranchId}, IsFirst={request.IsFirst}, Mappings Count={request.UserDischargeProcessMappings?.Count ?? 0}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SaveUpdateUserDischargeProcessMapping.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            if (request.IsFirst != 0 && request.IsFirst != 1)
+            {
+                _log.Warn($"Invalid IsFirst parameter: {request.IsFirst}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "IsFirst must be either 0 or 1",
+                    errors = new { IsFirst = request.IsFirst }
+                });
+            }
+
+            if (request.UserDischargeProcessMappings != null && request.UserDischargeProcessMappings.Count > 0)
+            {
+                bool isConsistent = request.UserDischargeProcessMappings.All(x =>
+                    x.TypeId == request.TypeId &&
+                    x.UserId == request.UserId &&
+                    x.BranchId == request.BranchId);
+
+                if (!isConsistent)
+                {
+                    _log.Warn("Inconsistent typeId, userId, or branchId in user discharge process mapping list.");
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return BadRequest(new
+                    {
+                        result = false,
+                        messageType = alert.Type,
+                        message = "All user discharge process mapping items must have the same typeId, userId, and branchId as the request"
+                    });
+                }
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.SaveUpdateUserDischargeProcessMapping(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"User discharge process mapping saved successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"User discharge process mapping save failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getUserWiseDischargeProcessMapping")]
+        [Authorize]
+        public IActionResult GetUserWiseDischargeProcessMapping(
+            [FromQuery] int branchId,
+            [FromQuery] int typeId,
+            [FromQuery] int userId)
+        {
+            _log.Info($"GetUserWiseDischargeProcessMapping called. BranchId={branchId}, TypeId={typeId}, UserId={userId}");
+
+            if (branchId <= 0 || typeId <= 0 || userId <= 0)
+            {
+                _log.Warn("Invalid parameters for GetUserWiseDischargeProcessMapping.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "All parameters (branchId, typeId, userId) must be greater than 0",
+                    errors = new { branchId, typeId, userId }
+                });
+            }
+
+            var serviceResult = _adminRepository.GetUserWiseDischargeProcessMapping(branchId, typeId, userId);
+
+            if (serviceResult.Result)
+                _log.Info($"User discharge process mapping (granted + remaining) fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"User discharge process mapping fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
     }
 }

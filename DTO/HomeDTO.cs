@@ -218,6 +218,80 @@ namespace HISWEBAPI.DTO
         [Range(1, int.MaxValue, ErrorMessage = "PatientId must be greater than 0")]
         public int PatientId { get; set; }
     }
+    public class UpdateFavoriteBillingTabRequest
+    {
+        [Required(ErrorMessage = "BranchId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than 0")]
+        public int BranchId { get; set; }
 
+        [Required(ErrorMessage = "RoleId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "RoleId must be greater than 0")]
+        public int RoleId { get; set; }
+
+        [Required(ErrorMessage = "TabId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "TabId must be greater than 0")]
+        public int TabId { get; set; }
+    }
+
+    public class UploadDocumentFromFileManagerRequest
+    {
+        [Required(ErrorMessage = "File is required")]
+        public IFormFile File { get; set; }
+    }
+
+    public class UploadDocumentFromFileManagerResponse
+    {
+        public string FileName { get; set; }
+        public string FilePath { get; set; }
+        public string FileExtension { get; set; }
+        public double FileSizeMB { get; set; }
+    }
+
+
+    public class SendMobileVerificationOtpRequest
+    {
+        [Required(ErrorMessage = "MobileNumber is required")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "MobileNumber must be exactly 10 digits")]
+        public string MobileNumber { get; set; }
+    }
+
+    public class MobileVerificationOtpResponseData
+    {
+        public string MobileHint { get; set; }
+    }
+
+    public class VerifyMobileVerificationOtpRequest
+    {
+        [Required(ErrorMessage = "MobileNumber is required")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "MobileNumber must be exactly 10 digits")]
+        public string MobileNumber { get; set; }
+
+        [Required(ErrorMessage = "OTP is required")]
+        [StringLength(6, MinimumLength = 6, ErrorMessage = "OTP must be 6 digits")]
+        public string Otp { get; set; }
+    }
+
+    public class SendEmailVerificationOtpRequest
+    {
+        [Required(ErrorMessage = "Email is required")]
+        [EmailAddress(ErrorMessage = "Invalid email format")]
+        public string Email { get; set; }
+    }
+
+    public class EmailVerificationOtpResponseData
+    {
+        public string EmailHint { get; set; }
+    }
+
+    public class VerifyEmailVerificationOtpRequest
+    {
+        [Required(ErrorMessage = "Email is required")]
+        [EmailAddress(ErrorMessage = "Invalid email format")]
+        public string Email { get; set; }
+
+        [Required(ErrorMessage = "OTP is required")]
+        [StringLength(6, MinimumLength = 6, ErrorMessage = "OTP must be 6 digits")]
+        public string Otp { get; set; }
+    }
 
 }

@@ -143,5 +143,17 @@ namespace HISWEBAPI.Repositories.Interfaces
 
         ServiceResult<CreateUpdateSurgeryComponentMasterResponse> CreateUpdateSurgeryComponentMaster(CreateUpdateSurgeryComponentMasterRequest request, AllGlobalValues globalValues);
         ServiceResult<object> GetSurgeryComponentsList(int? isActive);
+
+        ServiceResult<object> GetDischargeProcessMaster(int? isActive);
+        ServiceResult<object> GetDischargeProcessMasterById(int dischargeProcessId);
+        ServiceResult<CreateUpdateDischargeProcessMasterResponse> CreateUpdateDischargeProcessMaster( CreateUpdateDischargeProcessMasterRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateDischargeProcessSequence( UpdateDischargeProcessSequenceRequest request, AllGlobalValues globalValues);
+
+        ServiceResult<string> SaveDischargeProcessCorporateMapping(  SaveDischargeProcessCorporateMappingRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetDischargeProcessCorporateMapping(int? dischargeProcessId);
+        ServiceResult<string> SaveUpdateUserDischargeProcessMapping(SaveUserDischargeProcessMappingRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetUserWiseDischargeProcessMapping(int branchId, int typeId, int userId);
+
+
     }
 }

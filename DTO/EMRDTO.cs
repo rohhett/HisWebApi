@@ -366,6 +366,7 @@ namespace HISWEBAPI.DTO
 
         /// <summary>1 = mark file closed (consultation done), 0 = mark patient out</summary>
         public int IsFileClosed { get; set; } = 0;
+        public int IsTemperatureRoomOut { get; set; } = 0;
         public int PatientVitalId { get; set; } = 0;
         public DateTime VitalDateTime { get; set; }
 

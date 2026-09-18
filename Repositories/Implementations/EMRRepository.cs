@@ -2769,7 +2769,9 @@ namespace HISWEBAPI.Repositories.Implementations
                 }
 
                 // ── 3. U_PatientOutFileClose ──────────────────────────────────────────
-                _sqlHelper.DML(
+                if (c.IsTemperatureRoomOut == 0)
+                {
+                    _sqlHelper.DML(
                     tnx,
                     "U_PatientOutFileClose",
                     CommandType.StoredProcedure,
@@ -2780,6 +2782,21 @@ namespace HISWEBAPI.Repositories.Implementations
                         @userId = globalValues.userId,
                         @ipAddress = globalValues.ipAddress
                     });
+                }
+                // ── 4. U_OutPatientTempRoom ──────────────────────────────────────────
+                if (c.IsTemperatureRoomOut > 0)
+                {
+                    _sqlHelper.DML(
+                  tnx,
+                  "U_OutPatientTempRoom",
+                  CommandType.StoredProcedure,
+                  new
+                  {
+                      @visitId = c.VisitId,
+                      @userId = globalValues.userId,
+                      @ipAddress = globalValues.ipAddress
+                  });
+                }
 
                 tnx.Commit();
                 _log.Info($"SavePatientConsultation committed. VisitId={c.VisitId}, PatientId={c.PatientId}");

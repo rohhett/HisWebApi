@@ -1940,7 +1940,8 @@ namespace HISWEBAPI.Repositories.Implementations
                         @toDate = toDate.ToString("yyyy-MM-dd HH:mm:ss"),
                         @statusId = request.StatusId,
                         @dateTypeId = request.DateTypeId,
-                        @doctorDepartmentId = request.DoctorDepartmentId
+                        @doctorDepartmentId = request.DoctorDepartmentId,
+                        @isTempratureRoomOut = request.isTempratureRoomOut
                     });
 
                 if (dataTable == null || dataTable.Rows.Count == 0)

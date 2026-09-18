@@ -10,8 +10,14 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<MobileAppSettingsResponse> GetMobileAppSettings();
         ServiceResult<IEnumerable<BranchModel>> GetActiveBranchList();
         ServiceResult<IEnumerable<PickListModel>> GetPickListMaster(string fieldName);
+        ServiceResult<object> GetPredefineQueryResult(string queryName, string filter1, string filter2);
         ServiceResult<AllGlobalValues> GetAllGlobalValues();
         ServiceResult<string> ClearAllCache();
+
+        ServiceResult<MobileVerificationOtpResponseData> SendMobileVerificationOtp(SendMobileVerificationOtpRequest request);
+        ServiceResult<string> VerifyMobileVerificationOtp(VerifyMobileVerificationOtpRequest request);
+        ServiceResult<EmailVerificationOtpResponseData> SendEmailVerificationOtp(SendEmailVerificationOtpRequest request);
+        ServiceResult<string> VerifyEmailVerificationOtp(VerifyEmailVerificationOtpRequest request);
         ServiceResult<IEnumerable<CountryMasterModel>> GetCountryMaster(int? isActive);
         ServiceResult<IEnumerable<StateMasterModel>> GetStateMaster(int countryId, int? isActive);
         ServiceResult<IEnumerable<DistrictMasterModel>> GetDistrictMaster(int stateId, int? isActive);
@@ -21,7 +27,7 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<IEnumerable<InsuranceCompanyModel>> GetAllInsuranceCompanyList();
         ServiceResult<IEnumerable<CorporateModel>> GetCorporateListByInsuranceCompanyId(int? insuranceCompanyId, int? isActive);
         ServiceResult<IEnumerable<CorporateBranchMappingModel>> GetCorporateListByBranchIdAndInsuranceCompanyId(int? branchId, int? insuranceCompanyId);
-
+        ServiceResult<UploadDocumentFromFileManagerResponse> UploadDocument( UploadDocumentFromFileManagerRequest request,AllGlobalValues globalValues);
         ServiceResult<DTO.FileStreamResult> GetFile(string filePath);
         ServiceResult<FileBase64Result> GetFileAsBase64(string filePath);
         ServiceResult<FileExistsResult> CheckFileExists(string filePath);
@@ -48,9 +54,10 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<object> GetBedTypes(int branchId, int roomTypeId);
         ServiceResult<object> GetAvailableBeds(int branchId, int typeId);
         ServiceResult<object> GetBillingTabs(int branchId, int roleId, int tabTypeId, int roomServiceItemId, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateFavoriteBillingTab(UpdateFavoriteBillingTabRequest request, AllGlobalValues globalValues);
         ServiceResult<object> GetAssignBranchRight(int branchId);
         ServiceResult<IEnumerable<Dictionary<string, object>>> GetPatientLedgerBill(int patientId);
-
+        ServiceResult<IEnumerable<Dictionary<string, object>>> GetReceiptPaymentDetails(int receiptId);
 
     }
 }

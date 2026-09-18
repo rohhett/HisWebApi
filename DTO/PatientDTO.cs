@@ -372,9 +372,11 @@ namespace HISWEBAPI.DTO
 
         [Required(ErrorMessage = "ToDate is required")]
         public string ToDate { get; set; }
+        public int isTempratureRoomOut { get; set; } = 0;
+
     }
 
-  
+
     public class SaveIPDAdmissionRequest
     {
         [Required(ErrorMessage = "PatientId is required")]
