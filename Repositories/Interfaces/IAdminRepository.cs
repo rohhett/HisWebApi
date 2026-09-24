@@ -138,6 +138,9 @@ namespace HISWEBAPI.Repositories.Interfaces
     CreateUpdatePackageMasterRequest request,
     AllGlobalValues globalValues);
 
+        ServiceResult<CreateUpdateIPDPackageMasterResponse> CreateUpdateIPDPackageMaster(CreateUpdateIPDPackageMasterRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetIPDPackageSetupMapping(int packageId);
+
         ServiceResult<string> UpdateNavigationSubMenuSequenceNo(UpdateNavigationSubMenuSequenceRequest request, AllGlobalValues globalValues);
         ServiceResult<string> UpdateNavigationTabSequenceNo(UpdateNavigationTabSequenceRequest request, AllGlobalValues globalValues);
 
@@ -154,6 +157,7 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<string> SaveUpdateUserDischargeProcessMapping(SaveUserDischargeProcessMappingRequest request, AllGlobalValues globalValues);
         ServiceResult<object> GetUserWiseDischargeProcessMapping(int branchId, int typeId, int userId);
 
-
+        ServiceResult<CreateUpdateOTMasterResponse> CreateUpdateOTMaster(CreateUpdateOTMasterRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetOTMasterList(int? isActive);
     }
 }

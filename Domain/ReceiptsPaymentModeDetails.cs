@@ -12,7 +12,6 @@ namespace HISWEBAPI.Domain
         public decimal Amount { get; set; }
         public int PaymentModeId { get; set; }
         public int? BankId { get; set; }
-        public string ChequeDate { get; set; }
         public string ReferenceNo { get; set; }
         public int UserId { get; set; }
         public string IpAddress { get; set; }
@@ -27,7 +26,6 @@ namespace HISWEBAPI.Domain
                 @amount = Amount,
                 @paymentModeId = PaymentModeId,
                 @bankId = BankId,
-                @ChequeDate = ChequeDate,
                 @referenceNo = ReferenceNo,
                 @userId = UserId,
                 @IpAddress = IpAddress

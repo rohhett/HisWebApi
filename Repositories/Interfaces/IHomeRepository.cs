@@ -14,6 +14,7 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<AllGlobalValues> GetAllGlobalValues();
         ServiceResult<string> ClearAllCache();
 
+        ServiceResult<IEnumerable<Dictionary<string, object>>> GetDashBoardStates(int branchId, int userId, int roleId);
         ServiceResult<MobileVerificationOtpResponseData> SendMobileVerificationOtp(SendMobileVerificationOtpRequest request);
         ServiceResult<string> VerifyMobileVerificationOtp(VerifyMobileVerificationOtpRequest request);
         ServiceResult<EmailVerificationOtpResponseData> SendEmailVerificationOtp(SendEmailVerificationOtpRequest request);

@@ -20,6 +20,7 @@ using System.Reflection;
 using System.Runtime.ConstrainedExecution;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using static iTextSharp.text.pdf.AcroFields;
 using static Microsoft.EntityFrameworkCore.DbLoggerCategory;
 using static System.Net.Mime.MediaTypeNames;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -10351,6 +10352,200 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
+
+
+
+
+
+
+
+        public ServiceResult<CreateUpdateIPDPackageMasterResponse> CreateUpdateIPDPackageMaster(
+  CreateUpdateIPDPackageMasterRequest request,
+  AllGlobalValues globalValues)
+        {
+            var connectionString = _configuration.GetConnectionString("ConnectionString");
+            SqlConnection con = new SqlConnection(connectionString);
+            con.Open();
+            var tnx = CustomSqlHelper.getSqlTransaction(con);
+
+            try
+            {
+                _log.Info($"CreateUpdateIPDPackageMaster called. PackageId={request.PackageId}, Name={request.Name}");
+
+                // ── Parse validity dates ──────────────────────────────────────────
+                if (!DateTime.TryParse(request.ValidityStartsFrom, out DateTime validityStartsFrom))
+                {
+                    tnx.Rollback();
+                    var alertDate = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<CreateUpdateIPDPackageMasterResponse>.Failure(
+                        alertDate.Type, "Invalid ValidityStartsFrom format", 400);
+                }
+
+                if (!DateTime.TryParse(request.ValidityEndsOn, out DateTime validityEndsOn))
+                {
+                    tnx.Rollback();
+                    var alertDate = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<CreateUpdateIPDPackageMasterResponse>.Failure(
+                        alertDate.Type, "Invalid ValidityEndsOn format", 400);
+                }
+
+                // ── 1. IU_ServiceItemMaster (shared SP used across multiple masters) ──
+                var result = _sqlHelper.DML(
+                    tnx,
+                    "IU_ServiceItemMaster",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @hospId = globalValues.hospId,
+                        @serviceItemId = request.PackageId,
+                        @categoryId = request.CategoryId,
+                        @subCategoryId = request.SubCategoryId,
+                        @subSubCategoryId = request.SubSubCategoryId,
+                        @name = request.Name,
+                        @code = (object)request.Code ?? DBNull.Value,
+                        @validityStartsFrom = validityStartsFrom.ToString("yyyy-MM-dd"),
+                        @validityEndsOn = validityEndsOn.ToString("yyyy-MM-dd"),
+                        @packageDurationDays = request.PackageDurationDays > 0 ? request.PackageDurationDays : (int?)null,
+                        @isActive = request.IsActive,
+                        @userId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    },
+                    new { result = 0 }
+                );
+
+                int packageId = Convert.ToInt32(result);
+
+                if (packageId < 0)
+                {
+                    tnx.Rollback();
+                    var alertDup = _messageService.GetMessageAndTypeByAlertCode("RECORD_ALREADY_EXISTS");
+                    _log.Warn($"Package Name/Code already exists. Name={request.Name}, Code={request.Code}");
+                    return ServiceResult<CreateUpdateIPDPackageMasterResponse>.Failure(
+                        alertDup.Type,
+                        "Package Name (in same Sub Sub Category) or Code already exists",
+                        409
+                    );
+                }
+
+                // ── 2. Delete-then-insert package service mapping ─────────────────
+                _sqlHelper.DML(
+                    tnx,
+                    "D_IPDPackageSetupMapping",
+                    CommandType.StoredProcedure,
+                    new { @packageId = packageId }
+                );
+
+                foreach (var item in request.PackageSetups)
+                {
+                    _sqlHelper.DML(
+                        tnx,
+                        "IU_IPDPackageSetupMapping",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @packageId = packageId,
+                            @categoryId = item.CategoryId,
+                            @subCategoryId = item.SubCategoryId > 0 ? item.SubCategoryId : (int?)null,
+                            @subSubCategoryId = item.SubSubCategoryId > 0 ? item.SubSubCategoryId : (int?)null,
+                            @serviceItemId = item.ServiceItemId > 0 ? item.ServiceItemId : (int?)null,
+                            @LimitTypeId = item.LimitTypeId,
+                            @LimitType = (object)item.LimitType ?? DBNull.Value,
+                            @Limit = item.Limit,
+                            @ServiceQty = item.ServiceQty > 0 ? item.ServiceQty : (int?)null,
+                            @userId = globalValues.userId,
+                            @IpAddress = globalValues.ipAddress
+                        }
+                    );
+                }
+
+                tnx.Commit();
+                _log.Info($"IPD Package master saved successfully. PackageId={packageId}");
+
+                // ── Invalidate cache AFTER successful DB write ─────────────────────
+                _distributedCache.Remove("_ServiceItemMaster_All");
+                _log.Info("Cleared ServiceItemMaster cache after package master save.");
+
+                var responseData = new CreateUpdateIPDPackageMasterResponse { PackageId = packageId };
+                var alert = _messageService.GetMessageAndTypeByAlertCode(
+                    request.PackageId == 0 ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY"
+                );
+
+                return ServiceResult<CreateUpdateIPDPackageMasterResponse>.Success(
+                    responseData,
+                    alert.Type,
+                    request.PackageId == 0 ? "IPD Package saved successfully" : "IPD Package updated successfully",
+                    request.PackageId == 0 ? 201 : 200
+                );
+            }
+            catch (Exception ex)
+            {
+                try { tnx.Rollback(); } catch { /* swallow rollback exception */ }
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateIPDPackageMasterResponse>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+            finally
+            {
+                tnx.Dispose();
+                if (con.State == ConnectionState.Open)
+                    con.Close();
+            }
+        }
+
+
+        public ServiceResult<object> GetIPDPackageSetupMapping(int packageId)
+        {
+            try
+            {
+                _log.Info($"GetIPDPackageSetupMapping called. PackageId={packageId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetIPDPackageSetupMapping",
+                    CommandType.StoredProcedure,
+                    new { @packageId = packageId }
+                );
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No package setup found for PackageId={packageId}");
+                    return ServiceResult<object>.Failure(
+                        alert.Type,
+                        "No package setup found for this package",
+                        404
+                    );
+                }
+
+                // Raw SP data — model mapping nahi, taaki SP mein naye columns apne aap aa jayein
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetIPDPackageSetupMapping retrieved {result.Count} record(s) for PackageId={packageId}");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    result,
+                    alert1.Type,
+                    $"{result.Count} package setup record(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
         public ServiceResult<string> UpdateNavigationSubMenuSequenceNo(
     UpdateNavigationSubMenuSequenceRequest request,
     AllGlobalValues globalValues)
@@ -11105,6 +11300,156 @@ namespace HISWEBAPI.Repositories.Implementations
                     alert.Message,
                     500
                 );
+            }
+        }
+
+
+
+
+        private const string CACHE_KEY_OTMaster_All = "_OTMaster_All";
+
+        public ServiceResult<CreateUpdateOTMasterResponse> CreateUpdateOTMaster(
+            CreateUpdateOTMasterRequest request,
+            AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CreateUpdateOTMaster called. OTId={request.OTId}, OTName={request.OTName}");
+
+                // HH:mm string ko TimeSpan mein convert karo (SP ka param 'time' type hai)
+                if (!TimeSpan.TryParse(request.OTStartTime, out TimeSpan startTime) ||
+                    !TimeSpan.TryParse(request.OTEndTime, out TimeSpan endTime))
+                {
+                    var alertTime = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<CreateUpdateOTMasterResponse>.Failure(
+                        alertTime.Type, "Invalid OT start/end time", 400);
+                }
+
+                // IU_OTMaster true OUTPUT param use karta hai (SELECT @Result nahi hai),
+                // isliye DML nahi, RunProcedureInsert use karna hai
+                var parameters = new SqlParameter[]
+                {
+            new SqlParameter("@OTId",        SqlDbType.Int)           { Value = request.OTId },
+            new SqlParameter("@branchId",    SqlDbType.Int)           { Value = request.BranchId },
+            new SqlParameter("@OTName",      SqlDbType.NVarChar, 256) { Value = request.OTName },
+            new SqlParameter("@OTStartTime", SqlDbType.Time)          { Value = startTime },
+            new SqlParameter("@OTEndTime",   SqlDbType.Time)          { Value = endTime },
+            new SqlParameter("@OTSlotMins",  SqlDbType.Int)           { Value = request.OTSlotMins },
+            new SqlParameter("@isActive",    SqlDbType.Int)           { Value = request.IsActive },
+            new SqlParameter("@userId",      SqlDbType.Int)           { Value = globalValues.userId },
+            new SqlParameter("@IpAddress",   SqlDbType.NVarChar, 20)  { Value = (object)globalValues.ipAddress ?? DBNull.Value },
+            new SqlParameter("@Result",      SqlDbType.Int)           { Direction = ParameterDirection.Output }
+                };
+
+                long result = _sqlHelper.RunProcedureInsert("IU_OTMaster", parameters);
+
+                // -1 = duplicate OTName
+                if (result == -1)
+                {
+                    var dupAlert = _messageService.GetMessageAndTypeByAlertCode("RECORD_ALREADY_EXISTS");
+                    _log.Warn($"Duplicate OTName: {request.OTName}");
+                    return ServiceResult<CreateUpdateOTMasterResponse>.Failure(
+                        dupAlert.Type, "OT Name already exists", 409);
+                }
+
+                if (result > 0)
+                {
+                    // Cache DB success ke BAAD hi clear karna hai
+                    _distributedCache.Remove(CACHE_KEY_OTMaster_All);
+                    _log.Info($"Cleared OTMaster cache. OTId={result}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.OTId == 0 ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY");
+
+                    return ServiceResult<CreateUpdateOTMasterResponse>.Success(
+                        new CreateUpdateOTMasterResponse { OTId = (int)result },
+                        alert.Type,
+                        alert.Message,
+                        request.OTId == 0 ? 201 : 200);
+                }
+
+                var failAlert = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                return ServiceResult<CreateUpdateOTMasterResponse>.Failure(failAlert.Type, failAlert.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateOTMasterResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetOTMasterList(int? isActive)
+        {
+            try
+            {
+                _log.Info($"GetOTMasterList called. IsActive={isActive?.ToString() ?? "All"}");
+
+                var cachedData = _distributedCache.GetString(CACHE_KEY_OTMaster_All);
+                List<Dictionary<string, object>> allItems;
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    _log.Info($"OTMaster data retrieved from cache. Key={CACHE_KEY_OTMaster_All}");
+                    allItems = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData);
+                }
+                else
+                {
+                    _log.Info($"OTMaster cache miss. Fetching from database. Key={CACHE_KEY_OTMaster_All}");
+
+                    var dataTable = _sqlHelper.GetDataTable("S_GetAllOTMasterList", CommandType.StoredProcedure);
+
+                    // Raw SP data, koi model mapping nahi — naye columns automatically aayenge
+                    allItems = dataTable?.AsEnumerable().Select(row =>
+                        dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                            col => col.ColumnName,
+                            col => row[col] == DBNull.Value ? null : row[col]
+                        )
+                    ).ToList() ?? new List<Dictionary<string, object>>();
+
+                    if (allItems.Any())
+                    {
+                        var serialized = JsonSerializer.Serialize(allItems);
+                        var cacheOptions = new DistributedCacheEntryOptions
+                        {
+                            AbsoluteExpiration = null,
+                            SlidingExpiration = null
+                        };
+                        _distributedCache.SetString(CACHE_KEY_OTMaster_All, serialized, cacheOptions);
+                        _log.Info($"OTMaster cached permanently. Key={CACHE_KEY_OTMaster_All}, Count={allItems.Count}");
+                    }
+                }
+
+                // In-memory filter: isActive null hai to sab return hoga
+                if (isActive.HasValue)
+                {
+                    allItems = allItems.Where(row =>
+                    {
+                        if (row.TryGetValue("IsActive", out var val) && val != null)
+                            return val.ToString() == isActive.Value.ToString();
+                        return false;
+                    }).ToList();
+                    _log.Info($"Filtered by IsActive={isActive.Value}. Count={allItems.Count}");
+                }
+
+                if (!allItems.Any())
+                {
+                    var notFoundAlert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(notFoundAlert.Type, "No OT records found", 404);
+                }
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    allItems,
+                    alert.Type,
+                    $"{allItems.Count} OT record(s) retrieved successfully",
+                    200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
             }
         }
 

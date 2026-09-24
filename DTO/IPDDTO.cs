@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using System.Configuration;
 
 namespace HISWEBAPI.DTO
 {
@@ -259,7 +260,14 @@ namespace HISWEBAPI.DTO
         public int SampleTypeId { get; set; }
 
         public string BillingDate { get; set; }
-     
+
+        //IsAutoAddToPackage: Automatically include future services in the package during billing, based on the package configuration.
+        public int IsAutoAddToPackage { get; set; } = 0;
+
+        //IsAutoAddExistingServices: Automatically include existing services in the package during billing, based on the package configuration.
+        public int IsAutoAddExistingServices { get; set; } = 0;
+
+
     }
 
     public class SaveIPDBillingResponse

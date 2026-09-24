@@ -99,6 +99,9 @@
         public int? IsTeleConsultationService { get; set; }
         public int? IsRegistrationCharge { get; set; }
         public int? RegistrationChargeValidityDays { get; set; }
+        public int? PackageDurationDays { get; set; }
+        public string? StartsFrom { get; set; }
+        public string? ExpiresOn { get; set; }
         public int? IsPackageExpired { get; set; }
         public string SaltName { get; set; }
 

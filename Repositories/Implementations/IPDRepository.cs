@@ -997,6 +997,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         BranchId = v.BranchId,
                         FTID = ftid,
                         VisitId = visitId,
+                        BillId = billId,
                         PatientId = v.PatientId,
                         ServiceItemId = item.ServiceItemId,
                         SubSubCategoryId = item.SubSubCategoryId,
@@ -1107,7 +1108,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         HospId = globalValues.hospId,
                         BranchId = v.BranchId,
                         RoleId = v.RoleId,
-                        FTID = v.IsSupplementaryBill == 0 ? 0 : ftid,
+                        BillId = v.IsSupplementaryBill == 0 ? 0 : billId,
                         VisitId = visitId,
                         PatientId = v.PatientId,
                         Amount = totalPaidAmount,
@@ -1149,6 +1150,31 @@ namespace HISWEBAPI.Repositories.Implementations
 
                     isReceipt = true;
                 }
+
+
+                //if (request.IsBillDiscount == 1)
+                //{
+                //    var packageIdList = request.BillingItems
+                //        .Where(x => x.CategoryTypeId == 12)
+                //        .Select(x => x.ServiceItemId)
+                //        .Distinct()
+                //        .ToList();
+
+                //    if (packageIdList.Any())
+                //    {
+                //        foreach (var packageId in packageIdList)
+                //        {
+                //            _sqlHelper.DML(
+                //                tnx,
+                //                "U_AutoExistingServicesAddedinPackage",
+                //                CommandType.StoredProcedure,
+                //                new { @PackageId = packageId, @VisitId = visitId });
+
+                //        }
+                //    }
+                //}
+
+                UpdateIPDBillingByVisitId(tnx, v.VisitId, globalValues);
 
                 tnx.Commit();
                 _log.Info($"SaveIPDBilling committed. VisitId={visitId}, FTID={ftid}, ReceiptId={receiptId}");
@@ -1578,7 +1604,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     HospId = globalValues.hospId,
                     BranchId = request.BranchId,
                     RoleId = request.RoleId,
-                    FTID = 0,
+                    BillId = 0,
                     VisitId = request.VisitId,
                     PatientId = request.PatientId,
                     Amount = totalPaidAmount,
@@ -2215,26 +2241,108 @@ namespace HISWEBAPI.Repositories.Implementations
                 int billId = Convert.ToInt32(pbd.Create(_sqlHelper, tnx));
                 _log.Info($"PatientBillDetails created. BillId={billId}");
 
+                // ── 2. Split billing items by FTId, decide "full move" vs "partial move" ────
+                var ftIdGroups = request.BillingItems
+                    .GroupBy(i => i.FTId)
+                    .ToList();
 
-                // ── 2.Update billId in  FinancialTransactions  ─────────────────────────────────────────
-                foreach (var item in request.BillingItems)
+                var fullyCoveredFtIds = new List<int>();
+                var partiallyAffectedFtIds = new HashSet<int>(); // old FTIds that lose only some FTDs
+                var partialFtdIds = new List<int>();
+
+                foreach (var group in ftIdGroups)
                 {
-                    _sqlHelper.DML(
-                    tnx,
-                    "U_UpdateFinancialTransactionsBillId",
-                    CommandType.StoredProcedure,
-                    new
+                    int ftId = group.Key;
+                    var payloadFtdIds = group.Select(i => i.FTDId).Distinct().ToList();
+
+                    var dbFtdIdsTable = _sqlHelper.GetDataTable(
+                        tnx,
+                        "S_GetActiveFTDIdsByFTId",
+                        CommandType.StoredProcedure,
+                        new { @FTId = ftId }
+                    );
+
+                    var dbFtdIds = dbFtdIdsTable.AsEnumerable()
+                        .Select(r => Convert.ToInt32(r["FTDID"]))
+                        .ToList();
+
+                    bool allCovered = dbFtdIds.Count > 0 && dbFtdIds.All(id => payloadFtdIds.Contains(id));
+
+                    if (allCovered)
                     {
-                        @FTId = item.FTId,
-                        @FTDId = item.FTDId,
-                        @billId = billId,
-                        @UserId = globalValues.userId,
-                        @IpAddress = globalValues.ipAddress
+                        fullyCoveredFtIds.Add(ftId);
                     }
-                );
+                    else
+                    {
+                        _log.Warn($"FTId={ftId} not fully covered by payload. DbCount={dbFtdIds.Count}, PayloadCount={payloadFtdIds.Count}. Will split.");
+                        partialFtdIds.AddRange(payloadFtdIds);
+                        partiallyAffectedFtIds.Add(ftId); // the OLD ftid loses these FTDs, its totals shrink
+                    }
                 }
 
+                // 2a. Fully covered FTIds -> just repoint FinancialTransactions.BillId (totals unchanged)
+                foreach (var ftIdToUpdate in fullyCoveredFtIds)
+                {
+                    _sqlHelper.DML(
+                        tnx,
+                        "U_UpdateFinancialTransactionsBillId",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @FTId = ftIdToUpdate,
+                            @billId = billId,
+                            @UserId = globalValues.userId,
+                            @IpAddress = globalValues.ipAddress
+                        }
+                    );
+                    _log.Info($"FinancialTransactions.BillId updated for fully covered FTID={ftIdToUpdate}, BillId={billId}");
+                }
 
+                // 2b. Partially covered FTDIds -> new FinancialTransactions row + repoint those FTDIds
+                int? newFtId = null;
+                if (partialFtdIds.Any())
+                {
+                    var distinctPartialFtdIds = partialFtdIds.Distinct().ToList();
+
+                    var ft = new FinancialTransactions
+                    {
+                        HospId = globalValues.hospId,
+                        BranchId = v.BranchId,
+                        VisitId = visitId,
+                        BillId = billId,
+                        PatientId = v.PatientId,
+                        tnxType = TnxType.IPDBilling,
+                        GrossAmount = v.GrossBillAmount,
+                        DiscountPercentage = v.TotalDiscPerOnBill,
+                        DiscountAmount = v.TotalDiscAmtOnBill,
+                        RoundOff = v.RoundOff,
+                        NetAmount = v.NetAmount,
+                        Remarks = v.Remarks,
+                        UserId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress,
+                        UniqueId = v.UniqueId
+                    };
+
+                    newFtId = Convert.ToInt32(ft.Create(_sqlHelper, tnx));
+                    _log.Info($"New FinancialTransactions created for partial FTD split. NewFTID={newFtId}, FTDCount={distinctPartialFtdIds.Count}");
+
+                    string ftdIdList = string.Join(",", distinctPartialFtdIds);
+
+                    _sqlHelper.DML(
+                        tnx,
+                        "U_UpdateFinancialTransactionDetailsFTID",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @FTDIdList = ftdIdList,
+                            @FTID = newFtId.Value,
+                            @UserId = globalValues.userId,
+                            @IpAddress = globalValues.ipAddress
+                        }
+                    );
+
+                    _log.Info($"FinancialTransactionDetails re-pointed to NewFTID={newFtId} for FTDIds={ftdIdList}");
+                }
 
                 // ── 4. Receipt ───────────────────────────────────────────────────────
                 int receiptId = 0;
@@ -2246,7 +2354,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         HospId = globalValues.hospId,
                         BranchId = v.BranchId,
                         RoleId = v.RoleId,
-                        FTID = 0,//v.FTId,
+                        BillId = billId,
                         VisitId = visitId,
                         PatientId = v.PatientId,
                         Amount = totalPaidAmount,
@@ -2289,6 +2397,23 @@ namespace HISWEBAPI.Repositories.Implementations
                     isReceipt = true;
                 }
 
+
+                foreach (var oldFtId in partiallyAffectedFtIds)
+                {
+                    UpdateFinancialTransactionByFtId(tnx, oldFtId, globalValues);
+                    _log.Info($"Recalculated FinancialTransactions totals for old FTID={oldFtId} after FTD split");
+                }
+
+                if (newFtId.HasValue)
+                {
+                    UpdateFinancialTransactionByFtId(tnx, newFtId.Value, globalValues);
+                    _log.Info($"Recalculated FinancialTransactions totals for new FTID={newFtId.Value} after FTD split");
+                }
+
+
+                UpdateIPDBillingByVisitId(tnx, v.VisitId, globalValues);
+
+
                 tnx.Commit();
 
                 var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
@@ -2322,6 +2447,17 @@ namespace HISWEBAPI.Repositories.Implementations
                 if (con.State == ConnectionState.Open)
                     con.Close();
             }
+        }
+
+
+        private void UpdateFinancialTransactionByFtId(SqlTransaction tnx, int ftId, AllGlobalValues globalValues)
+        {
+            _sqlHelper.DML(tnx, "U_UpdateFinancialTransactionByFTId", CommandType.StoredProcedure, new
+            {
+                @FTId = ftId,
+                @UserId = globalValues.userId,
+                @IpAddress = globalValues.ipAddress
+            });
         }
     }
 }

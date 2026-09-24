@@ -10,6 +10,7 @@ namespace HISWEBAPI.Domain
         public int BranchId { get; set; }
         public int FTID { get; set; }
         public int? VisitId { get; set; }
+        public int? BillId { get; set; }
         public int? PatientId { get; set; }
         public int ServiceItemId { get; set; }
         public int SubSubCategoryId { get; set; }
@@ -46,8 +47,6 @@ namespace HISWEBAPI.Domain
         public int Deal2 { get; set; }
         public decimal GstPer { get; set; }
         public decimal GstAmt { get; set; }
-        public string AppointmentDate { get; set; }
-        public int DiagnosisId { get; set; }
 
         public dynamic Create(ICustomSqlHelper sqlHelper, SqlTransaction tnx)
         {
@@ -57,6 +56,7 @@ namespace HISWEBAPI.Domain
                 @branchId = BranchId,
                 @FTID = FTID,
                 @visitId = VisitId,
+                @billId = BillId,
                 @patientId = PatientId,
                 @serviceItemId = ServiceItemId,
                 @subSubCategoryId = SubSubCategoryId,
@@ -92,9 +92,7 @@ namespace HISWEBAPI.Domain
                 @deal1 = Deal1,
                 @deal2 = Deal2,
                 @gstPer = GstPer,
-                @gstAmt = GstAmt,
-                @AppointmentDate = AppointmentDate,
-                @diagnosisId = DiagnosisId
+                @gstAmt = GstAmt
             }, new { result = 0 });
         }
     }

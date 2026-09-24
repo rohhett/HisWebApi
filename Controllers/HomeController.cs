@@ -244,6 +244,44 @@ namespace HISWEBAPI.Controllers
            
         }
 
+        [HttpGet("getDashBoardStates")]
+        [Authorize]
+        public IActionResult GetDashBoardStates(
+    [FromQuery] int branchId,
+    [FromQuery] int roleId = 0)
+        {
+            _log.Info($"GetDashBoardStates called. BranchId={branchId}, RoleId={roleId}");
+
+            if (branchId <= 0)
+            {
+                _log.Warn("Invalid BranchId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "BranchId must be greater than 0",
+                    errors = new { branchId }
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _homeRepository.GetDashBoardStates(branchId, globalValues.userId, roleId);
+
+            if (serviceResult.Result)
+                _log.Info($"Dashboard states fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"Dashboard states fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
 
         [HttpPost("sendMobileVerificationOtp")]
         [Authorize]

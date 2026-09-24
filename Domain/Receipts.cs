@@ -9,7 +9,7 @@ namespace HISWEBAPI.Domain
         public int HospId { get; set; }
         public int BranchId { get; set; }
         public int RoleId { get; set; }
-        public int FTID { get; set; }
+        public int BillId { get; set; }
         public int? VisitId { get; set; }
         public int PatientId { get; set; }
         public decimal Amount { get; set; }
@@ -38,7 +38,7 @@ namespace HISWEBAPI.Domain
                 @hospId = HospId,
                 @branchId = BranchId,
                 @roleId = RoleId,
-                @FTID = FTID,
+                @BillId = BillId,
                 @visitId = VisitId,
                 @patientId = PatientId,
                 @amount = Amount,

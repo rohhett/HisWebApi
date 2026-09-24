@@ -433,7 +433,64 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
+        public ServiceResult<IEnumerable<Dictionary<string, object>>> GetDashBoardStates(int branchId, int userId, int roleId)
+        {
+            try
+            {
+                _log.Info($"GetDashBoardStates called. BranchId={branchId}, UserId={userId}, RoleId={roleId}");
 
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_DashBoard_States",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @branchId = branchId,
+                        @userId = userId,
+                        @roleId = roleId
+                    }
+                );
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No dashboard states found for BranchId={branchId}");
+                    return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                        alert.Type,
+                        "No dashboard states found",
+                        404
+                    );
+                }
+
+                // Raw DataTable -> List<Dictionary<string,object>> (no model mapping,
+                // so any new columns added to the SP surface automatically)
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetDashBoardStates retrieved {result.Count} record(s) for BranchId={branchId}");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Success(
+                    result,
+                    alert1.Type,
+                    "Dashboard states retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
         public ServiceResult<MobileVerificationOtpResponseData> SendMobileVerificationOtp(SendMobileVerificationOtpRequest request)
         {
             try
@@ -2655,6 +2712,9 @@ namespace HISWEBAPI.Repositories.Implementations
                         IsTeleConsultationService = row.Field<int?>("isTeleConsultationService") ?? 0,
                         IsRegistrationCharge = row.Field<int?>("IsRegistrationCharge") ?? 0,
                         RegistrationChargeValidityDays = row.Field<int?>("RegistrationChargeValidityDays") ?? 0,
+                        PackageDurationDays = row.Field<int?>("PackageDurationDays"),
+                        StartsFrom = row.Field<string>("StartsFrom") ?? string.Empty,
+                        ExpiresOn = row.Field<string>("ExpiresOn") ?? string.Empty,
                         IsPackageExpired = row.Field<int?>("IsPackageExpired") ?? 0,
                         SaltName = row.Field<string>("SaltName") ?? string.Empty,
 

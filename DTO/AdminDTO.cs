@@ -1941,4 +1941,109 @@ namespace HISWEBAPI.DTO
         public List<UserDischargeProcessMappingRequest>? UserDischargeProcessMappings { get; set; }
     }
 
+
+
+
+
+
+    public class CreateUpdateIPDPackageMasterRequest
+    {
+        public int PackageId { get; set; } = 0;
+
+        [Required(ErrorMessage = "CategoryId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CategoryId must be greater than 0")]
+        public int CategoryId { get; set; }
+
+        [Required(ErrorMessage = "SubCategoryId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "SubCategoryId must be greater than 0")]
+        public int SubCategoryId { get; set; }
+
+        [Required(ErrorMessage = "SubSubCategoryId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "SubSubCategoryId must be greater than 0")]
+        public int SubSubCategoryId { get; set; }
+
+        [Required(ErrorMessage = "Name is required")]
+        [StringLength(256, ErrorMessage = "Name cannot exceed 256 characters")]
+        public string Name { get; set; }
+
+        [StringLength(50, ErrorMessage = "Code cannot exceed 50 characters")]
+        public string? Code { get; set; }
+
+        [Required(ErrorMessage = "ValidityStartsFrom is required")]
+        public string ValidityStartsFrom { get; set; }   // dd-MM-yyyy ya yyyy-MM-dd
+
+        [Required(ErrorMessage = "ValidityEndsOn is required")]
+        public string ValidityEndsOn { get; set; }
+        public int? PackageDurationDays { get; set; }      // null allowed
+
+        [Required(ErrorMessage = "IsActive is required")]
+        public int IsActive { get; set; }
+
+        [Required(ErrorMessage = "PackageSetups is required")]
+        [MinLength(1, ErrorMessage = "At least one package setup is required")]
+        public List<IPDPackageSetupRequest> PackageSetups { get; set; } = new List<IPDPackageSetupRequest>();
+    }
+
+    public class IPDPackageSetupRequest
+    {
+        [Required(ErrorMessage = "CategoryId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CategoryId must be greater than 0")]
+        public int CategoryId { get; set; }
+
+        public int? SubCategoryId { get; set; }      // null allowed
+        public int? SubSubCategoryId { get; set; }   // null allowed
+        public int? ServiceItemId { get; set; }      // null allowed
+
+        [Required(ErrorMessage = "LimitTypeId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "LimitTypeId must be greater than 0")]
+        public int LimitTypeId { get; set; }
+
+        [StringLength(20, ErrorMessage = "LimitType cannot exceed 20 characters")]
+        public string? LimitType { get; set; }
+
+        public decimal Limit { get; set; }           // > 0 controller mein check hota hai
+
+        public int? ServiceQty { get; set; }         // null allowed
+    }
+
+    public class CreateUpdateIPDPackageMasterResponse
+    {
+        public int PackageId { get; set; }
+    }
+
+
+    public class CreateUpdateOTMasterRequest
+    {
+        public int OTId { get; set; } = 0;   // 0 = create, >0 = update
+
+        [Required(ErrorMessage = "BranchId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than 0")]
+        public int BranchId { get; set; }
+
+        [Required(ErrorMessage = "OTName is required")]
+        [StringLength(256, ErrorMessage = "OTName cannot exceed 256 characters")]
+        public string OTName { get; set; }
+
+        [Required(ErrorMessage = "OTStartTime is required")]
+        [RegularExpression(@"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", ErrorMessage = "OTStartTime must be in HH:mm format (e.g., 09:00)")]
+        public string OTStartTime { get; set; }
+
+        [Required(ErrorMessage = "OTEndTime is required")]
+        [RegularExpression(@"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", ErrorMessage = "OTEndTime must be in HH:mm format (e.g., 17:00)")]
+        public string OTEndTime { get; set; }
+
+        [Required(ErrorMessage = "OTSlotMins is required")]
+        [Range(1, 1440, ErrorMessage = "OTSlotMins must be between 1 and 1440")]
+        public int OTSlotMins { get; set; }
+
+        [Required(ErrorMessage = "IsActive is required")]
+        [Range(0, 1, ErrorMessage = "IsActive must be 0 or 1")]
+        public int IsActive { get; set; }
+    }
+
+    public class CreateUpdateOTMasterResponse
+    {
+        public int OTId { get; set; }
+    }
+
 }

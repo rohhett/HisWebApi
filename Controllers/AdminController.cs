@@ -5496,6 +5496,132 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+
+        [HttpPost("createUpdateIPDPackageMaster")]
+        [Authorize]
+        public IActionResult CreateUpdateIPDPackageMaster([FromBody] CreateUpdateIPDPackageMasterRequest request)
+        {
+            _log.Info($"CreateUpdateIPDPackageMaster called. PackageId={request?.PackageId}, Name={request?.Name}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for CreateUpdateIPDPackageMaster.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            if (request.IsActive != 0 && request.IsActive != 1)
+            {
+                _log.Warn("Invalid IsActive value provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "IsActive must be 0 or 1",
+                    errors = new { isActive = request.IsActive }
+                });
+            }
+
+            if (request.PackageSetups == null || !request.PackageSetups.Any())
+            {
+                _log.Warn("No package setup provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "At least one package setup is required",
+                    errors = new[] { "PackageSetups cannot be empty" }
+                });
+            }
+
+            // Limit > 0 hona chahiye
+            var invalidLimits = request.PackageSetups.Where(s => s.Limit <= 0).ToList();
+            if (invalidLimits.Any())
+            {
+                _log.Warn($"{invalidLimits.Count} package setup row(s) have Limit <= 0.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "Limit must be greater than 0 for every package setup",
+                    errors = new { invalidLimits = invalidLimits.Select(s => s.Limit).ToList() }
+                });
+            }
+
+            // ServiceQty dia hai to negative nahi hona chahiye
+            if (request.PackageSetups.Any(s => s.ServiceQty.HasValue && s.ServiceQty.Value < 0))
+            {
+                _log.Warn("Negative ServiceQty provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "ServiceQty cannot be negative"
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.CreateUpdateIPDPackageMaster(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"IPD package master operation completed: {serviceResult.Message}");
+            else
+                _log.Warn($"IPD package master operation failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getIPDPackageSetupMapping")]
+        [Authorize]
+        public IActionResult GetIPDPackageSetupMapping([FromQuery] int packageId)
+        {
+            _log.Info($"GetIPDPackageSetupMapping called. PackageId={packageId}");
+
+            if (packageId <= 0)
+            {
+                _log.Warn("Invalid PackageId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "PackageId must be greater than 0",
+                    errors = new { packageId }
+                });
+            }
+
+            var serviceResult = _adminRepository.GetIPDPackageSetupMapping(packageId);
+
+            if (serviceResult.Result)
+                _log.Info($"IPD package setup fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"IPD package setup fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpPatch("updateNavigationSubMenuSequenceNo")]
         [Authorize]
         public IActionResult UpdateNavigationSubMenuSequenceNo([FromBody] UpdateNavigationSubMenuSequenceRequest request)
@@ -5949,6 +6075,94 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+
+        [HttpPost("createUpdateOTMaster")]
+        [Authorize]
+        public IActionResult CreateUpdateOTMaster([FromBody] CreateUpdateOTMasterRequest request)
+        {
+            _log.Info($"CreateUpdateOTMaster called. OTId={request.OTId}, OTName={request.OTName}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for OT master insert/update.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            // End time, start time ke baad hona chahiye
+            if (TimeSpan.TryParse(request.OTStartTime, out var st) &&
+                TimeSpan.TryParse(request.OTEndTime, out var et) && et <= st)
+            {
+                _log.Warn("OTEndTime must be greater than OTStartTime.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "OTEndTime must be greater than OTStartTime",
+                    errors = new { request.OTStartTime, request.OTEndTime }
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.CreateUpdateOTMaster(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"OT master operation completed: {serviceResult.Message}");
+            else
+                _log.Warn($"OT master operation failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getOTMasterList")]
+        [Authorize]
+        public IActionResult GetOTMasterList([FromQuery] int? isActive = null)
+        {
+            _log.Info($"GetOTMasterList called. IsActive={isActive?.ToString() ?? "All"}");
+
+            if (isActive.HasValue && isActive.Value != 0 && isActive.Value != 1)
+            {
+                _log.Warn($"Invalid IsActive parameter: {isActive.Value}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "IsActive must be 0 (Inactive), 1 (Active), or null (All)",
+                    errors = new { isActive }
+                });
+            }
+
+            var serviceResult = _adminRepository.GetOTMasterList(isActive);
+
+            if (serviceResult.Result)
+                _log.Info($"OTMaster fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"OTMaster fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+
 
     }
 }
