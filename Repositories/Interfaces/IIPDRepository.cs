@@ -42,6 +42,10 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<object> ValidatePatientDischargeProcess(int visitId);
         ServiceResult<string> SaveIPDDischarge(SaveIPDDischargeRequest request, AllGlobalValues globalValues);
         ServiceResult<CreateSupplementaryBillFromMainBillResponse> CreateSupplementaryBillFromMainBill(CreateSupplementaryBillFromMainBillRequest request, AllGlobalValues globalValues);
-
+        ServiceResult<object> InitializePatientOTProcess(InitializePatientOTProcessRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetPatientOTProcess(int visitId);
+        ServiceResult<object> GetCurrentOTProcess(int visitId);
+        ServiceResult<object> CompletePatientOTProcess(CompletePatientOTProcessRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> ValidatePatientOTProcess(int visitId);
     }
 }

@@ -34,6 +34,7 @@ namespace HISWEBAPI.Domain
         public int IsUnderPackage { get; set; }
         public string DiscountReason { get; set; }
         public int RateListId { get; set; }
+        public int IsAutoAddToPackage { get; set; }
         public int UserId { get; set; }
         public long? StockId { get; set; }
         public long? EquipmentId { get; set; }
@@ -92,7 +93,8 @@ namespace HISWEBAPI.Domain
                 @deal1 = Deal1,
                 @deal2 = Deal2,
                 @gstPer = GstPer,
-                @gstAmt = GstAmt
+                @gstAmt = GstAmt,
+                @isAutoAddToPackage= IsAutoAddToPackage
             }, new { result = 0 });
         }
     }

@@ -83,6 +83,9 @@ namespace HISWEBAPI.DTO
         public string? City { get; set; }
 
         public int InsuranceCompanyId { get; set; } = 0;
+
+        [Required(ErrorMessage = "CorporateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CorporateId must be greater than 0")]
         public int CorporateId { get; set; }
 
         [StringLength(100)]
@@ -176,6 +179,9 @@ namespace HISWEBAPI.DTO
         public string CurrentAge { get; set; }
 
         public int InsuranceCompanyId { get; set; }
+
+        [Required(ErrorMessage = "CorporateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CorporateId must be greater than 0")]
         public int CorporateId { get; set; }
         public int doctorId { get; set; } = 0;
         public int ReferDoctorId { get; set; }
@@ -397,6 +403,9 @@ namespace HISWEBAPI.DTO
         public List<int> SecondaryDoctorIds { get; set; } = new();
 
         public int InsuranceCompanyId { get; set; }
+
+        [Required(ErrorMessage = "CorporateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CorporateId must be greater than 0")]
         public int CorporateId { get; set; }
         public int ReferDoctorId { get; set; }
         public int ProId { get; set; }

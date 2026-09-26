@@ -6162,7 +6162,223 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        // ─── OT Process Master ────────────────────────────────────────────────────
 
+        [HttpGet("getOTProcessMaster")]
+        [Authorize]
+        public IActionResult GetOTProcessMaster([FromQuery] int? isActive = null)
+        {
+            _log.Info($"GetOTProcessMaster called. IsActive={isActive?.ToString() ?? "All"}");
 
+            if (isActive.HasValue && isActive.Value != 0 && isActive.Value != 1)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "IsActive must be 0, 1, or null (All)", errors = new { isActive } });
+            }
+
+            var serviceResult = _adminRepository.GetOTProcessMaster(isActive);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("createUpdateOTProcessMaster")]
+        [Authorize]
+        public IActionResult CreateUpdateOTProcessMaster([FromBody] CreateUpdateOTProcessMasterRequest request)
+        {
+            _log.Info($"CreateUpdateOTProcessMaster called. OTProcessId={request.OTProcessId}, ProcessKey={request.ProcessKey}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.CreateUpdateOTProcessMaster(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updateOTProcessSequence")]
+        [Authorize]
+        public IActionResult UpdateOTProcessSequence([FromBody] UpdateOTProcessSequenceRequest request)
+        {
+            _log.Info($"UpdateOTProcessSequence called. Count={request?.Sequences?.Count ?? 0}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var duplicateSeq = request.Sequences.GroupBy(s => s.SequenceNo).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+            if (duplicateSeq.Any())
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "Duplicate SequenceNo values are not allowed", errors = new { duplicateSeq } });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.UpdateOTProcessSequence(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("saveUpdateUserOTProcessMapping")]
+        [Authorize]
+        public IActionResult SaveUpdateUserOTProcessMapping([FromBody] SaveUserOTProcessMappingRequest request)
+        {
+            _log.Info($"SaveUpdateUserOTProcessMapping called. TypeId={request?.TypeId}, UserId={request?.UserId}, BranchId={request?.BranchId}, IsFirst={request?.IsFirst}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SaveUpdateUserOTProcessMapping.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            if (request.BranchId <= 0)
+            {
+                _log.Warn("Invalid BranchId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "BranchId must be greater than 0",
+                    errors = new { branchId = request.BranchId }
+                });
+            }
+
+            if (request.TypeId <= 0)
+            {
+                _log.Warn("Invalid TypeId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "TypeId must be greater than 0",
+                    errors = new { typeId = request.TypeId }
+                });
+            }
+
+            if (request.UserId <= 0)
+            {
+                _log.Warn("Invalid UserId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "UserId must be greater than 0",
+                    errors = new { userId = request.UserId }
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.SaveUpdateUserOTProcessMapping(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"User OT process mapping saved successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"User OT process mapping save failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getUserWiseOTProcessMapping")]
+        [Authorize]
+        public IActionResult GetUserWiseOTProcessMapping(
+            [FromQuery] int branchId,
+            [FromQuery] int typeId,
+            [FromQuery] int userId)
+        {
+            _log.Info($"GetUserWiseOTProcessMapping called. BranchId={branchId}, TypeId={typeId}, UserId={userId}");
+
+            if (branchId <= 0)
+            {
+                _log.Warn("Invalid BranchId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "BranchId must be greater than 0",
+                    errors = new { branchId }
+                });
+            }
+
+            if (typeId <= 0)
+            {
+                _log.Warn("Invalid TypeId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "TypeId must be greater than 0",
+                    errors = new { typeId }
+                });
+            }
+
+            if (userId <= 0)
+            {
+                _log.Warn("Invalid UserId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "UserId must be greater than 0",
+                    errors = new { userId }
+                });
+            }
+
+            var serviceResult = _adminRepository.GetUserWiseOTProcessMapping(branchId, typeId, userId);
+
+            if (serviceResult.Result)
+                _log.Info($"User OT process mapping fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"User OT process mapping fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
     }
 }

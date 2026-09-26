@@ -1018,7 +1018,8 @@ namespace HISWEBAPI.Repositories.Implementations
                         IsCorporateNonPayable = item.IsNonPayable,
                         DiscountReason = itemDiscReason,
                         RateListId = item.RateListId,
-                      
+                        IsAutoAddToPackage = item.IsAutoAddToPackage,
+
                         BillingDate = parsedBillingDate.ToString("yyyy-MM-dd"),
                         UserId = globalValues.userId,
                         IpAddress = globalValues.ipAddress
@@ -1152,27 +1153,40 @@ namespace HISWEBAPI.Repositories.Implementations
                 }
 
 
-                //if (request.IsBillDiscount == 1)
-                //{
-                //    var packageIdList = request.BillingItems
-                //        .Where(x => x.CategoryTypeId == 12)
-                //        .Select(x => x.ServiceItemId)
-                //        .Distinct()
-                //        .ToList();
 
-                //    if (packageIdList.Any())
-                //    {
-                //        foreach (var packageId in packageIdList)
-                //        {
-                //            _sqlHelper.DML(
-                //                tnx,
-                //                "U_AutoExistingServicesAddedinPackage",
-                //                CommandType.StoredProcedure,
-                //                new { @PackageId = packageId, @VisitId = visitId });
+                var packageIdList = request.BillingItems
+                    .Where(x => x.CategoryTypeId == 12 && x.IsAutoAddExistingServices == 1)
+                    .Select(x => x.ServiceItemId)
+                    .Distinct()
+                    .ToList();
 
-                //        }
-                //    }
-                //}
+                _log.Info("BillingItems check: " + string.Join(" | ",
+                    request.BillingItems.Select(x =>
+                        $"ServiceItemId={x.ServiceItemId}, CategoryTypeId={x.CategoryTypeId}, IsAutoAddExistingServices={x.IsAutoAddExistingServices}")));
+
+                _log.Info($"packageIdList=[{string.Join(",", packageIdList)}], Count={packageIdList.Count}");
+
+                if (packageIdList.Any())
+                {
+                    foreach (var packageId in packageIdList)
+                    {
+                        _sqlHelper.DML(
+                            tnx,
+                            "U_AddExistingServicesInPackage",
+                            CommandType.StoredProcedure,
+                            new
+                            {
+                                @PackageId = packageId,
+                                @VisitId = visitId,
+                                @billId = billId,
+                                @UserId = globalValues.userId,
+                                @IpAddress = globalValues.ipAddress
+                            });
+                        _log.Info($"U_AddExistingServicesInPackage called. packageId={packageId}, billId={billId}, VisitId={visitId}");
+
+                    }
+                }
+
 
                 UpdateIPDBillingByVisitId(tnx, v.VisitId, globalValues);
 
@@ -2458,6 +2472,216 @@ namespace HISWEBAPI.Repositories.Implementations
                 @UserId = globalValues.userId,
                 @IpAddress = globalValues.ipAddress
             });
+        }
+
+        // ─── Patient OT Workflow (visit-specific — never cached) ───────────────────
+
+        public ServiceResult<object> InitializePatientOTProcess(InitializePatientOTProcessRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"InitializePatientOTProcess called. VisitId={request.VisitId}");
+
+                long result = _sqlHelper.RunProcedureInsert(
+                    "I_InitializePatientOTProcess",
+                    new IDataParameter[]
+                    {
+                new SqlParameter("@VisitId", request.VisitId),
+                new SqlParameter("@UserId", globalValues.userId),
+                new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                int resultValue = Convert.ToInt32(result);
+
+                if (resultValue == -2)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No active OT processes are configured", 404);
+                }
+
+                if (resultValue == -3)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+                }
+
+                var workflow = GetPatientOTProcess(request.VisitId);
+                if (!workflow.Result)
+                    return workflow;
+
+                string message = resultValue == -1
+                    ? "OT workflow already initialized for this visit"
+                    : "OT workflow initialized successfully";
+
+                var successAlert = _messageService.GetMessageAndTypeByAlertCode(
+                    resultValue == -1 ? "OPERATION_COMPLETED_SUCCESSFULLY" : "DATA_SAVED_SUCCESSFULLY");
+
+                return ServiceResult<object>.Success(workflow.Data, successAlert.Type, message, resultValue == -1 ? 200 : 201);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetPatientOTProcess(int visitId)
+        {
+            try
+            {
+                _log.Info($"GetPatientOTProcess called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetPatientOTProcess", CommandType.StoredProcedure, new { @VisitId = visitId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "OT workflow not initialized for this visit", 404);
+                }
+
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, $"{result.Count} process(es) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetCurrentOTProcess(int visitId)
+        {
+            try
+            {
+                _log.Info($"GetCurrentOTProcess called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetCurrentOTProcess", CommandType.StoredProcedure, new { @VisitId = visitId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No current OT process found", 404);
+                }
+
+                var row = dataTable.Rows[0];
+                var result = dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                    col => col.ColumnName,
+                    col => row[col] == DBNull.Value ? null : row[col]
+                );
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, "Current OT process retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> CompletePatientOTProcess(CompletePatientOTProcessRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CompletePatientOTProcess called. VisitId={request.VisitId}, OTProcessId={request.OTProcessId}");
+
+                long result = _sqlHelper.RunProcedureInsert(
+                    "U_PatientOTProcess",
+                    new IDataParameter[]
+                    {
+                new SqlParameter("@VisitId", request.VisitId),
+                new SqlParameter("@OTProcessId", request.OTProcessId),
+                new SqlParameter("@UserId", globalValues.userId),
+                new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                new SqlParameter("@Remarks", (object)request.Remarks ?? DBNull.Value),
+                new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                int resultValue = Convert.ToInt32(result);
+                var (failType, failMessage, failCode) = MapOTWorkflowErrorCode(resultValue);
+                if (failMessage != null)
+                    return ServiceResult<object>.Failure(failType, failMessage, failCode);
+
+                // NOTE: dispatch on request-resolved ProcessKey here if a step needs an
+                // existing business operation (e.g. OT_NOTES -> save OT notes SP), same
+                // pattern as discharge process handlers. Workflow engine stays generic.
+
+                var next = GetCurrentOTProcess(request.VisitId);
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(next.Data, alert.Type, "OT process completed successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> ValidatePatientOTProcess(int visitId)
+        {
+            try
+            {
+                _log.Info($"ValidatePatientOTProcess called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_ValidatePatientOTProcess", CommandType.StoredProcedure, new { @VisitId = visitId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "OT workflow not initialized for this visit", 404);
+                }
+
+                var row = dataTable.Rows[0];
+                var result = dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                    col => col.ColumnName,
+                    col => row[col] == DBNull.Value ? null : row[col]
+                );
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, success.Type, "OT validation completed", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        private (string Type, string Message, int StatusCode) MapOTWorkflowErrorCode(int resultValue)
+        {
+            switch (resultValue)
+            {
+                case -1:
+                    return (_messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER").Type,
+                        "This process is not part of the patient's OT workflow", 400);
+                case -2:
+                    return (_messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED").Type,
+                        "This OT process has already been completed", 409);
+                case -3:
+                    return (_messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED").Type,
+                        "Previous OT process is not completed. Only the current process can be executed", 409);
+                case -99:
+                    return (_messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND").Type,
+                        "Server error while processing OT workflow step", 500);
+                default:
+                    return (null, null, 0);
+            }
         }
     }
 }

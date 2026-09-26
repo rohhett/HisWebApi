@@ -159,5 +159,13 @@ namespace HISWEBAPI.Repositories.Interfaces
 
         ServiceResult<CreateUpdateOTMasterResponse> CreateUpdateOTMaster(CreateUpdateOTMasterRequest request, AllGlobalValues globalValues);
         ServiceResult<object> GetOTMasterList(int? isActive);
+
+        // ─── OT Process ────────────────────────────────────────────────────────────
+        ServiceResult<object> GetOTProcessMaster(int? isActive);
+        ServiceResult<CreateUpdateOTProcessMasterResponse> CreateUpdateOTProcessMaster(CreateUpdateOTProcessMasterRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> UpdateOTProcessSequence(UpdateOTProcessSequenceRequest request, AllGlobalValues globalValues);
+
+        ServiceResult<string> SaveUpdateUserOTProcessMapping(SaveUserOTProcessMappingRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetUserWiseOTProcessMapping(int branchId, int typeId, int userId);
     }
 }

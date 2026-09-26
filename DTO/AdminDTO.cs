@@ -2033,7 +2033,7 @@ namespace HISWEBAPI.DTO
         public string OTEndTime { get; set; }
 
         [Required(ErrorMessage = "OTSlotMins is required")]
-        [Range(1, 1440, ErrorMessage = "OTSlotMins must be between 1 and 1440")]
+        [Range(10, 360, ErrorMessage = "OTSlotMins must be between 10 and 360")]
         public int OTSlotMins { get; set; }
 
         [Required(ErrorMessage = "IsActive is required")]
@@ -2046,4 +2046,84 @@ namespace HISWEBAPI.DTO
         public int OTId { get; set; }
     }
 
+
+    // ─── OT Process Master ────────────────────────────────────────────────────
+
+    public class CreateUpdateOTProcessMasterRequest
+    {
+        public int OTProcessId { get; set; } = 0;
+
+        [Required(ErrorMessage = "ProcessKey is required")]
+        [StringLength(100, ErrorMessage = "ProcessKey cannot exceed 100 characters")]
+        [RegularExpression(@"^[A-Z0-9_]+$", ErrorMessage = "ProcessKey must be uppercase letters, digits, and underscores only")]
+        public string ProcessKey { get; set; }
+
+        [Required(ErrorMessage = "ProcessName is required")]
+        [StringLength(200, ErrorMessage = "ProcessName cannot exceed 200 characters")]
+        public string ProcessName { get; set; }
+
+        public int? FaIconId { get; set; }
+
+        [Required(ErrorMessage = "IsActive is required")]
+        [Range(0, 1, ErrorMessage = "IsActive must be 0 or 1")]
+        public int IsActive { get; set; } = 1;
+
+        [Range(0, 1, ErrorMessage = "IsSystemProcess must be 0 or 1")]
+        public int IsSystemProcess { get; set; } = 0;
+    }
+
+    public class CreateUpdateOTProcessMasterResponse
+    {
+        public int OTProcessId { get; set; }
+    }
+
+    public class UpdateOTProcessSequenceItemRequest
+    {
+        [Required(ErrorMessage = "OTProcessId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTProcessId must be greater than 0")]
+        public int OTProcessId { get; set; }
+
+        [Required(ErrorMessage = "SequenceNo is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "SequenceNo must be greater than 0")]
+        public int SequenceNo { get; set; }
+    }
+
+    public class UpdateOTProcessSequenceRequest
+    {
+        [Required(ErrorMessage = "Sequences is required")]
+        [MinLength(1, ErrorMessage = "At least one sequence item is required")]
+        public List<UpdateOTProcessSequenceItemRequest> Sequences { get; set; } = new();
+    }
+
+    public class SaveUserOTProcessMappingRequest
+    {
+        [Required(ErrorMessage = "TypeId is required")]
+        public int TypeId { get; set; }
+
+        [Required(ErrorMessage = "UserId is required")]
+        public int UserId { get; set; }
+
+        [Required(ErrorMessage = "BranchId is required")]
+        public int BranchId { get; set; }
+
+        /// <summary>1 = delete existing active mappings for this User/Type/Branch before inserting the new list</summary>
+        public int IsFirst { get; set; } = 0;
+
+        public List<UserOTProcessMappingItem> UserOTProcessMappings { get; set; } = new List<UserOTProcessMappingItem>();
+    }
+
+    public class UserOTProcessMappingItem
+    {
+        [Required(ErrorMessage = "UserId is required")]
+        public int UserId { get; set; }
+
+        [Required(ErrorMessage = "TypeId is required")]
+        public int TypeId { get; set; }
+
+        [Required(ErrorMessage = "BranchId is required")]
+        public int BranchId { get; set; }
+
+        /// <summary>0 = ignored (filtered out before insert)</summary>
+        public int OTProcessId { get; set; }
+    }
 }

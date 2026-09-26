@@ -11453,5 +11453,384 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
+        private const string CACHE_KEY_OTProcessMaster_All = "_OTProcessMaster_All";
+
+        // ─── Master ────────────────────────────────────────────────────────────────
+
+        public ServiceResult<object> GetOTProcessMaster(int? isActive)
+        {
+            try
+            {
+                _log.Info($"GetOTProcessMaster called. IsActive={isActive?.ToString() ?? "All"}");
+
+                var cachedData = _distributedCache.GetString(CACHE_KEY_OTProcessMaster_All);
+                List<Dictionary<string, object>> allItems;
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    allItems = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData);
+                }
+                else
+                {
+                    var dataTable = _sqlHelper.GetDataTable("S_OTProcessMaster", CommandType.StoredProcedure);
+                    allItems = dataTable?.AsEnumerable().Select(row =>
+                        dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                            col => col.ColumnName,
+                            col => row[col] == DBNull.Value ? null : row[col]
+                        )
+                    ).ToList() ?? new List<Dictionary<string, object>>();
+
+                    if (allItems.Any())
+                    {
+                        var serialized = JsonSerializer.Serialize(allItems);
+                        var cacheOptions = new DistributedCacheEntryOptions { AbsoluteExpiration = null, SlidingExpiration = null };
+                        _distributedCache.SetString(CACHE_KEY_OTProcessMaster_All, serialized, cacheOptions);
+                        _log.Info($"OTProcessMaster cached permanently. Count={allItems.Count}");
+                    }
+                }
+
+                if (isActive.HasValue)
+                {
+                    allItems = allItems.Where(row =>
+                        row.TryGetValue("IsActive", out var val) && val != null && val.ToString() == isActive.Value.ToString()
+                    ).ToList();
+                }
+
+                if (!allItems.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No OT processes found", 404);
+                }
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(allItems, success.Type, $"{allItems.Count} OT process(es) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<CreateUpdateOTProcessMasterResponse> CreateUpdateOTProcessMaster(
+            CreateUpdateOTProcessMasterRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CreateUpdateOTProcessMaster called. OTProcessId={request.OTProcessId}, ProcessKey={request.ProcessKey}");
+
+                long result = _sqlHelper.RunProcedureInsert(
+                    "IU_OTProcessMaster",
+                    new IDataParameter[]
+                    {
+                new SqlParameter("@OTProcessId", request.OTProcessId),
+                new SqlParameter("@ProcessKey", request.ProcessKey),
+                new SqlParameter("@ProcessName", request.ProcessName),
+                new SqlParameter("@FaIconId", (object)request.FaIconId ?? DBNull.Value),
+                new SqlParameter("@IsActive", request.IsActive),
+                new SqlParameter("@IsSystemProcess", request.IsSystemProcess),
+                new SqlParameter("@UserId", globalValues.userId),
+                new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                int resultValue = Convert.ToInt32(result);
+
+                if (resultValue == -1)
+                {
+                    var dupAlert = _messageService.GetMessageAndTypeByAlertCode("RECORD_ALREADY_EXISTS");
+                    return ServiceResult<CreateUpdateOTProcessMasterResponse>.Failure(dupAlert.Type, "ProcessKey already exists", 409);
+                }
+
+                if (resultValue == -2)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<CreateUpdateOTProcessMasterResponse>.Failure(alert.Type, "OT process not found for update", 404);
+                }
+
+                if (resultValue > 0)
+                {
+                    _distributedCache.Remove(CACHE_KEY_OTProcessMaster_All);
+                    _log.Info($"Cleared OTProcessMaster cache. OTProcessId={resultValue}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.OTProcessId == 0 ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY");
+
+                    return ServiceResult<CreateUpdateOTProcessMasterResponse>.Success(
+                        new CreateUpdateOTProcessMasterResponse { OTProcessId = resultValue },
+                        alert.Type, alert.Message, request.OTProcessId == 0 ? 201 : 200);
+                }
+
+                var failAlert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateOTProcessMasterResponse>.Failure(failAlert.Type, failAlert.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateOTProcessMasterResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> UpdateOTProcessSequence(UpdateOTProcessSequenceRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdateOTProcessSequence called. Count={request.Sequences.Count}");
+
+                foreach (var item in request.Sequences)
+                {
+                    _sqlHelper.DML(
+                        "U_OTProcessSequence",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @OTProcessId = item.OTProcessId,
+                            @SequenceNo = item.SequenceNo,
+                            @UserId = globalValues.userId,
+                            @IpAddress = globalValues.ipAddress
+                        });
+                }
+
+                _distributedCache.Remove(CACHE_KEY_OTProcessMaster_All);
+                _log.Info("Cleared OTProcessMaster cache after sequence update.");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success("Sequence updated successfully", alert.Type, alert.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> SaveUpdateUserOTProcessMapping(
+            SaveUserOTProcessMappingRequest request,
+            AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"SaveUpdateUserOTProcessMapping called. TypeId={request.TypeId}, UserId={request.UserId}, BranchId={request.BranchId}, IsFirst={request.IsFirst}");
+
+                // Delete existing user OT process mappings if IsFirst = 1
+                if (request.IsFirst == 1)
+                {
+                    _sqlHelper.DML("D_DeleteUserOTProcessMapping", CommandType.StoredProcedure, new
+                    {
+                        @UserId = request.UserId,
+                        @TypeId = request.TypeId,
+                        @BranchId = request.BranchId
+                    },
+                    new
+                    {
+                        result = 0
+                    });
+
+                    _log.Info($"Deleted existing user OT process mapping for TypeId={request.TypeId}, UserId={request.UserId}, BranchId={request.BranchId}");
+                }
+
+                string clearCacheKey = $"_UserOTProcessMapping_{request.BranchId}_{request.TypeId}_{request.UserId}";
+
+                // If mapping list is empty or null, only delete operation was needed
+                if (request.UserOTProcessMappings == null || !request.UserOTProcessMappings.Any())
+                {
+                    _distributedCache.Remove(clearCacheKey);
+                    _log.Info($"Cleared cache for key: {clearCacheKey}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.IsFirst == 1 ? "DATA_DELETED_SUCCESSFULLY" : "DATA_SAVED_SUCCESSFULLY"
+                    );
+
+                    return ServiceResult<string>.Success(
+                        request.IsFirst == 1 ? "User OT process mappings deleted successfully" : "No OT process mappings to save",
+                        alert.Type,
+                        alert.Message,
+                        200
+                    );
+                }
+
+                // Filter out items with OTProcessId = 0
+                var validMappings = request.UserOTProcessMappings.Where(m => m.OTProcessId != 0).ToList();
+
+                if (!validMappings.Any())
+                {
+                    _distributedCache.Remove(clearCacheKey);
+                    _log.Info($"Cleared cache for key: {clearCacheKey}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.IsFirst == 1 ? "DATA_DELETED_SUCCESSFULLY" : "DATA_SAVED_SUCCESSFULLY"
+                    );
+
+                    return ServiceResult<string>.Success(
+                        request.IsFirst == 1 ? "User OT process mappings deleted successfully" : "No valid OT process mappings to save",
+                        alert.Type,
+                        alert.Message,
+                        200
+                    );
+                }
+
+                // Validate consistency of all items with parent request
+                bool isConsistent = validMappings.All(x =>
+                    x.TypeId == request.TypeId &&
+                    x.UserId == request.UserId &&
+                    x.BranchId == request.BranchId);
+
+                if (!isConsistent)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    _log.Warn("Inconsistent TypeId, UserId, or BranchId in user OT process mapping list.");
+
+                    return ServiceResult<string>.Failure(
+                        alert.Type,
+                        "All user OT process mapping items must have the same TypeId, UserId, and BranchId as the request",
+                        400
+                    );
+                }
+
+                // Insert new user OT process mappings
+                int insertedCount = 0;
+                foreach (var mapping in validMappings)
+                {
+                    var result = _sqlHelper.DML("IU_UserOTProcessMapping", CommandType.StoredProcedure, new
+                    {
+                        @UserId = mapping.UserId,
+                        @TypeId = mapping.TypeId,
+                        @BranchId = mapping.BranchId,
+                        @OTProcessId = mapping.OTProcessId,
+                        @CreatedBy = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    },
+                    new
+                    {
+                        result = 0
+                    });
+
+                    if (result > 0)
+                    {
+                        insertedCount++;
+                    }
+                }
+
+                _distributedCache.Remove(clearCacheKey);
+                _log.Info($"Cleared cache for key: {clearCacheKey}");
+                _log.Info($"Inserted {insertedCount} user OT process mapping records for UserId={request.UserId}");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<string>.Success(
+                    $"User OT process mapping updated successfully. {insertedCount} process(es) assigned.",
+                    alert1.Type,
+                    alert1.Message,
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
+        public ServiceResult<object> GetUserWiseOTProcessMapping(
+            int branchId,
+            int typeId,
+            int userId)
+        {
+            try
+            {
+                _log.Info($"GetUserWiseOTProcessMapping called. BranchId={branchId}, TypeId={typeId}, UserId={userId}");
+
+                // Generate dynamic cache key based on branchId, typeId, and userId
+                string cacheKey = $"_UserOTProcessMapping_{branchId}_{typeId}_{userId}";
+
+                // Try to get data from cache
+                var cachedData = _distributedCache.GetString(cacheKey);
+                List<Dictionary<string, object>> mappings;
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    _log.Info($"UserOTProcessMapping data retrieved from cache. Key={cacheKey}");
+                    mappings = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData);
+                }
+                else
+                {
+                    _log.Info($"UserOTProcessMapping cache miss. Fetching data from database. Key={cacheKey}");
+
+                    var dataTable = _sqlHelper.GetDataTable(
+                        "S_GetRemainingAssignOTProcessForUserAuthorization",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @BranchId = branchId,
+                            @typeId = typeId,
+                            @UserId = userId
+                        }
+                    );
+
+                    // Raw DataTable -> List<Dictionary<string,object>> (no model mapping),
+                    // so any new columns added to the SP automatically flow through
+                    mappings = dataTable?.AsEnumerable().Select(row =>
+                        dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                            col => col.ColumnName,
+                            col => row[col] == DBNull.Value ? null : row[col]
+                        )
+                    ).ToList() ?? new List<Dictionary<string, object>>();
+
+                    // Store data in cache with no expiration
+                    if (mappings.Any())
+                    {
+                        var serialized = System.Text.Json.JsonSerializer.Serialize(mappings);
+                        var cacheOptions = new DistributedCacheEntryOptions
+                        {
+                            // No expiration - cache persists until manually cleared
+                            AbsoluteExpiration = null,
+                            SlidingExpiration = null
+                        };
+                        _distributedCache.SetString(cacheKey, serialized, cacheOptions);
+                        _log.Info($"UserOTProcessMapping data cached permanently. Key={cacheKey}, Count={mappings.Count}");
+                    }
+                }
+
+                if (!mappings.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No user OT process mapping found for BranchId={branchId}, TypeId={typeId}, UserId={userId}");
+
+                    return ServiceResult<object>.Failure(
+                        alert.Type,
+                        alert.Message,
+                        404
+                    );
+                }
+
+                _log.Info($"Retrieved {mappings.Count} user OT process mapping records (Granted + Remaining) from cache");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    mappings,
+                    alert1.Type,
+                    $"{mappings.Count} user OT process mapping(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
     }
 }

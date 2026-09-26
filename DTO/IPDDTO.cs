@@ -63,6 +63,7 @@ namespace HISWEBAPI.DTO
         public int BillingTypeId { get; set; }
 
         [Required(ErrorMessage = "CorporateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CorporateId must be greater than 0")]
         public int CorporateId { get; set; }
 
         /// <summary>1 = also recalculate tariff/billing for the visit after corporate change</summary>
@@ -115,6 +116,7 @@ namespace HISWEBAPI.DTO
         public int InsuranceCompanyId { get; set; }
 
         [Required(ErrorMessage = "CorporateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CorporateId must be greater than 0")]
         public int CorporateId { get; set; }
 
         [Required(ErrorMessage = "BillingTypeId is required")]
@@ -203,6 +205,8 @@ namespace HISWEBAPI.DTO
         [Range(1, int.MaxValue, ErrorMessage = "VisitId must be greater than 0")]
         public int VisitId { get; set; }
 
+        [Required(ErrorMessage = "CorporateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CorporateId must be greater than 0")]
         public int CorporateId { get; set; }
 
         public decimal GrossBillAmount { get; set; }
@@ -445,7 +449,8 @@ namespace HISWEBAPI.DTO
         [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than 0")]
         public int BranchId { get; set; }
 
-        [Range(0, int.MaxValue, ErrorMessage = "CorporateId must be greater than or equal to 0")]
+        [Required(ErrorMessage = "CorporateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "CorporateId must be greater than 0")]
         public int CorporateId { get; set; } = 0;
     }
 
@@ -629,6 +634,29 @@ namespace HISWEBAPI.DTO
         public bool? IsPoliceInformed { get; set; }
         public string? Remarks { get; set; }
         public string? FIRNo { get; set; }
+    }
+
+    // ─── Patient OT Workflow ───────────────────────────────────────────────────
+
+    public class InitializePatientOTProcessRequest
+    {
+        [Required(ErrorMessage = "VisitId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "VisitId must be greater than 0")]
+        public int VisitId { get; set; }
+    }
+
+    public class CompletePatientOTProcessRequest
+    {
+        [Required(ErrorMessage = "VisitId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "VisitId must be greater than 0")]
+        public int VisitId { get; set; }
+
+        [Required(ErrorMessage = "OTProcessId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTProcessId must be greater than 0")]
+        public int OTProcessId { get; set; }
+
+        [StringLength(500, ErrorMessage = "Remarks cannot exceed 500 characters")]
+        public string? Remarks { get; set; }
     }
 
 }

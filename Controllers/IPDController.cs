@@ -1455,5 +1455,125 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        // ─── Patient OT Workflow ───────────────────────────────────────────────────
+
+        [HttpPost("initializePatientOTProcess")]
+        [Authorize]
+        public IActionResult InitializePatientOTProcess([FromBody] InitializePatientOTProcessRequest request)
+        {
+            _log.Info($"InitializePatientOTProcess called. VisitId={request?.VisitId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.InitializePatientOTProcess(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getPatientOTProcess")]
+        [Authorize]
+        public IActionResult GetPatientOTProcess([FromQuery] int visitId)
+        {
+            _log.Info($"GetPatientOTProcess called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
+            }
+
+            var serviceResult = _ipdRepository.GetPatientOTProcess(visitId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getCurrentOTProcess")]
+        [Authorize]
+        public IActionResult GetCurrentOTProcess([FromQuery] int visitId)
+        {
+            _log.Info($"GetCurrentOTProcess called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
+            }
+
+            var serviceResult = _ipdRepository.GetCurrentOTProcess(visitId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("completePatientOTProcess")]
+        [Authorize]
+        public IActionResult CompletePatientOTProcess([FromBody] CompletePatientOTProcessRequest request)
+        {
+            _log.Info($"CompletePatientOTProcess called. VisitId={request?.VisitId}, OTProcessId={request?.OTProcessId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.CompletePatientOTProcess(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("validatePatientOTProcess")]
+        [Authorize]
+        public IActionResult ValidatePatientOTProcess([FromQuery] int visitId)
+        {
+            _log.Info($"ValidatePatientOTProcess called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
+            }
+
+            var serviceResult = _ipdRepository.ValidatePatientOTProcess(visitId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+
     }
 }
