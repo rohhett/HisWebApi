@@ -1483,7 +1483,7 @@ namespace HISWEBAPI.Controllers
 
         [HttpGet("getPatientOTProcess")]
         [Authorize]
-        public IActionResult GetPatientOTProcess([FromQuery] int visitId)
+        public IActionResult GetPatientOTProcess([FromQuery] int visitId, [FromQuery] int branchId)
         {
             _log.Info($"GetPatientOTProcess called. VisitId={visitId}");
 
@@ -1493,7 +1493,13 @@ namespace HISWEBAPI.Controllers
                 return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
             }
 
-            var serviceResult = _ipdRepository.GetPatientOTProcess(visitId);
+            if (branchId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "BranchId must be greater than 0", errors = new { branchId } });
+            }
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.GetPatientOTProcess(visitId, branchId, globalValues);
 
             return StatusCode(serviceResult.StatusCode, new
             {

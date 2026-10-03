@@ -896,10 +896,20 @@ namespace HISWEBAPI.Repositories.Implementations
                 var v = request.VisitDetails;
                 int visitId = v.VisitId;
 
+               
                 decimal totalPaidAmount = 0;
+                decimal totalAmountSettledWithPatientAdvance = 0;
                 if (request.PaymentDetails?.Count > 0)
                 {
                     totalPaidAmount = request.PaymentDetails.Sum(p => p.Amount);
+                    foreach (var adv in request.PaymentDetails)
+                    {
+                        if (adv.IsPatientAdvanceAmount == 1)
+                        {
+                            totalAmountSettledWithPatientAdvance = adv.Amount;
+                            break;
+                        }
+                    }
                 }
 
                 // ── 1. PatientBillDetails ────────────────────────────────────────────
@@ -923,6 +933,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     TotalPatientPayableAmount = v.NetAmount,
                     TotalCorporatePayableAmount = 0,
                     TotalPatientPaidAmount = totalPaidAmount,
+                    TotalAmountSettledWithPatientAdvance = totalAmountSettledWithPatientAdvance,
                     TotalCorporatePaidAmount = 0,
                     IsSupplementaryBill = v.IsSupplementaryBill,
                     UserId = globalValues.userId,
@@ -966,6 +977,32 @@ namespace HISWEBAPI.Repositories.Implementations
 
                 foreach (var item in request.BillingItems)
                 {
+                    //check Existing IPD Package
+                    if (item.CategoryTypeId == 11 || item.CategoryTypeId == 12)
+                    {
+                        int isExistIPDPackage = Convert.ToInt32(_sqlHelper.ExecuteScalar(
+                            tnx,
+                            "S_CheckExistingIPDService",
+                            CommandType.StoredProcedure,
+                            new
+                            {
+                                @VisitId = v.VisitId,
+                                @ServiceItemId = item.ServiceItemId
+                            }));
+
+                        if (isExistIPDPackage == 1)
+                        {
+                            tnx.Rollback();
+
+                            return ServiceResult<SaveIPDBillingResponse>.Failure(
+                                "Error",
+                                $"Package [{item.ServiceName}] is already applied to this patient.",
+                                400
+                            );
+                        }
+                    }
+
+
                     // ── 3a. FinancialTransactionDetails ──────────────────────────────
                     decimal itemDiscPer, itemDiscAmt, itemNetAmt;
                     string itemDiscReason;
@@ -1112,7 +1149,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         BillId = v.IsSupplementaryBill == 0 ? 0 : billId,
                         VisitId = visitId,
                         PatientId = v.PatientId,
-                        Amount = totalPaidAmount,
+                        Amount = totalPaidAmount- totalAmountSettledWithPatientAdvance,
                         IsCopaymentReceipt = request.PaymentDetails[0].IsCopaymentReceipt,
                         PlutusTransactionReferenceID = request.PaymentDetails[0].PlutusTransactionReferenceID,
                         TransactionLogId = request.PaymentDetails[0].TransactionLogId,
@@ -1152,8 +1189,41 @@ namespace HISWEBAPI.Repositories.Implementations
                     isReceipt = true;
                 }
 
+                if (totalAmountSettledWithPatientAdvance > 0)
+                {
 
+                    // ── PatientLedgerBill (insert or update running balance) ─────────
+                    var ledgerBill = new PatientLedgerBill
+                    {
+                        PatientId = v.PatientId,
+                        LedgerId = 0,
+                        TransactionType = LedgerBillTransactionType.Debit,
+                        Amount = totalAmountSettledWithPatientAdvance,
+                        UserId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    };
 
+                    int ledgerId = Convert.ToInt32(ledgerBill.Create(_sqlHelper, tnx));
+                    _log.Info($"PatientLedgerBill upserted. LedgerId={ledgerId}");
+
+                    // ── PatientLedgerDetails (transaction history row) ────────────────
+                    var ledgerDetails = new PatientLedgerDetails
+                    {
+                        PatientId = v.PatientId,
+                        LedgerId = ledgerId,
+                        TransactionType = LedgerTransactionType.Debit,
+                        Amount = totalAmountSettledWithPatientAdvance,
+                        VisitId = visitId,
+                        BillId = billId,
+                        ReceiptId = 0,
+                        UserId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    };
+
+                    ledgerDetails.Create(_sqlHelper, tnx);
+                }
+
+                // start -- used for package billing
                 var packageIdList = request.BillingItems
                     .Where(x => x.CategoryTypeId == 12 && x.IsAutoAddExistingServices == 1)
                     .Select(x => x.ServiceItemId)
@@ -1186,7 +1256,53 @@ namespace HISWEBAPI.Repositories.Implementations
 
                     }
                 }
+                //end
 
+
+                // start -- Auto Add service in package
+                if (v.IsSupplementaryBill == 0)
+                {
+                    if (request.IsForceAddServiceToPackage == 1)
+                    {
+
+                    }
+                    else
+                    {
+                        var prePackageIdList = request.BillingItems
+                        .Where(x => x.CategoryTypeId != 12 && x.PackageId > 0)
+                        .Select(x => x.ServiceItemId)
+                        .Distinct()
+                        .ToList();
+
+                        _log.Info("BillingItems check: " + string.Join(" | ",
+                            request.BillingItems.Select(x =>
+                                $"ServiceItemId={x.ServiceItemId}, CategoryTypeId={x.CategoryTypeId}, IsAutoAddExistingServices={x.IsAutoAddExistingServices}")));
+
+                        _log.Info($"packageIdList=[{string.Join(",", packageIdList)}], Count={packageIdList.Count}");
+
+                        //if (prePackageIdList.Any())
+                        //{
+                        //    foreach (var packageId in prePackageIdList)
+                        //    {
+                        //        _sqlHelper.DML(
+                        //            tnx,
+                        //            "U_AddExistingServicesInPackage",
+                        //            CommandType.StoredProcedure,
+                        //            new
+                        //            {
+                        //                @PackageId = packageId,
+                        //                @VisitId = visitId,
+                        //                @billId = billId,
+                        //                @UserId = globalValues.userId,
+                        //                @IpAddress = globalValues.ipAddress
+                        //            });
+                        //        _log.Info($"U_AddExistingServicesInPackage called. packageId={packageId}, billId={billId}, VisitId={visitId}");
+
+                        //    }
+                        //}
+                    }
+                }
+                //end
 
                 UpdateIPDBillingByVisitId(tnx, v.VisitId, globalValues);
 
@@ -2219,10 +2335,21 @@ namespace HISWEBAPI.Repositories.Implementations
                 var v = request.VisitDetails;
                 int visitId = v.VisitId;
 
+              
+
                 decimal totalPaidAmount = 0;
+                decimal totalAmountSettledWithPatientAdvance = 0;
                 if (request.PaymentDetails?.Count > 0)
                 {
                     totalPaidAmount = request.PaymentDetails.Sum(p => p.Amount);
+                    foreach (var adv in request.PaymentDetails)
+                    {
+                        if (adv.IsPatientAdvanceAmount == 1)
+                        {
+                            totalAmountSettledWithPatientAdvance = adv.Amount;
+                            break;
+                        }
+                    }
                 }
 
                 // ── 1. PatientBillDetails ────────────────────────────────────────────
@@ -2243,6 +2370,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     TotalPayableAmount = v.NetAmount,
                     TotalPaidAmount = totalPaidAmount,
                     TotalBalanceAmount = v.NetAmount - totalPaidAmount,
+                    TotalAmountSettledWithPatientAdvance = totalAmountSettledWithPatientAdvance,
                     TotalPatientPayableAmount = v.NetAmount,
                     TotalCorporatePayableAmount = 0,
                     TotalPatientPaidAmount = totalPaidAmount,
@@ -2371,7 +2499,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         BillId = billId,
                         VisitId = visitId,
                         PatientId = v.PatientId,
-                        Amount = totalPaidAmount,
+                        Amount = totalPaidAmount- totalAmountSettledWithPatientAdvance,
                         IsCopaymentReceipt = 0,
                         PlutusTransactionReferenceID = request.PaymentDetails[0].PlutusTransactionReferenceID,
                         TransactionLogId = request.PaymentDetails[0].TransactionLogId,
@@ -2410,6 +2538,41 @@ namespace HISWEBAPI.Repositories.Implementations
 
                     isReceipt = true;
                 }
+
+                if (totalAmountSettledWithPatientAdvance > 0)
+                {
+
+                    // ── PatientLedgerBill (insert or update running balance) ─────────
+                    var ledgerBill = new PatientLedgerBill
+                    {
+                        PatientId = v.PatientId,
+                        LedgerId = 0,
+                        TransactionType = LedgerBillTransactionType.Debit,
+                        Amount = totalAmountSettledWithPatientAdvance,
+                        UserId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    };
+
+                    int ledgerId = Convert.ToInt32(ledgerBill.Create(_sqlHelper, tnx));
+                    _log.Info($"PatientLedgerBill upserted. LedgerId={ledgerId}");
+
+                    // ── PatientLedgerDetails (transaction history row) ────────────────
+                    var ledgerDetails = new PatientLedgerDetails
+                    {
+                        PatientId = v.PatientId,
+                        LedgerId = ledgerId,
+                        TransactionType = LedgerTransactionType.Debit,
+                        Amount = totalAmountSettledWithPatientAdvance,
+                        VisitId = visitId,
+                        BillId = billId,
+                        ReceiptId = 0,
+                        UserId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    };
+
+                    ledgerDetails.Create(_sqlHelper, tnx);
+                }
+
 
 
                 foreach (var oldFtId in partiallyAffectedFtIds)
@@ -2506,7 +2669,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
                 }
 
-                var workflow = GetPatientOTProcess(request.VisitId);
+                var workflow = GetPatientOTProcess(request.VisitId,request.BranchId, globalValues);
                 if (!workflow.Result)
                     return workflow;
 
@@ -2527,14 +2690,14 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
-        public ServiceResult<object> GetPatientOTProcess(int visitId)
+        public ServiceResult<object> GetPatientOTProcess(int visitId,int branchId, AllGlobalValues globalValues)
         {
             try
             {
                 _log.Info($"GetPatientOTProcess called. VisitId={visitId}");
 
                 var dataTable = _sqlHelper.GetDataTable(
-                    "S_GetPatientOTProcess", CommandType.StoredProcedure, new { @VisitId = visitId });
+                    "S_GetPatientOTProcess", CommandType.StoredProcedure, new { @VisitId = visitId , @branchId = branchId , @UserId = globalValues.userId});
 
                 if (dataTable == null || dataTable.Rows.Count == 0)
                 {

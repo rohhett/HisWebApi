@@ -135,4 +135,16 @@
         public byte[] Content { get; set; } = [];
         public string FileName { get; set; } = "PatientReport.pdf";
     }
+
+    public class PredefineQueryConfig
+    {
+        public int QueryId { get; set; }
+        public string QueryName { get; set; }
+        public string SPName { get; set; }
+        public string Filter1 { get; set; }
+        public string Filter2 { get; set; }
+        public string Filter3 { get; set; }
+        public string Filter4 { get; set; }
+        public string Filter5 { get; set; }
+    }
 }

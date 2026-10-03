@@ -188,6 +188,8 @@ namespace HISWEBAPI.DTO
 
         /// <summary>1 = apply a single bill-level discount across all items</summary>
         public int IsBillDiscount { get; set; } = 0;
+        public int IsForceAddServiceToPackage { get; set; } = 0;
+
     }
 
     public class IPDBillingVisitDetailsRequest
@@ -270,6 +272,9 @@ namespace HISWEBAPI.DTO
 
         //IsAutoAddExistingServices: Automatically include existing services in the package during billing, based on the package configuration.
         public int IsAutoAddExistingServices { get; set; } = 0;
+
+        // PackageId used to add billing service in this package
+        public int PackageId { get; set; } = 0;
 
 
     }
@@ -643,6 +648,9 @@ namespace HISWEBAPI.DTO
         [Required(ErrorMessage = "VisitId is required")]
         [Range(1, int.MaxValue, ErrorMessage = "VisitId must be greater than 0")]
         public int VisitId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than 0")]
+        public int BranchId { get; set; }
     }
 
     public class CompletePatientOTProcessRequest

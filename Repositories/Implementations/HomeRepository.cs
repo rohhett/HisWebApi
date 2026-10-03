@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 
 namespace HISWEBAPI.Repositories.Implementations
 {
@@ -292,110 +293,139 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
-        private const string CACHE_KEY_PredefineQueryMaster_All = "_PredefineQueryMaster_All";
 
-        public ServiceResult<object> GetPredefineQueryResult(string queryName, string filter1, string filter2)
+        private const string CACHE_KEY_PredefineQueryConfig_All = "_PredefineQueryConfig_All";
+        public ServiceResult<object> GetPredefineQueryResult(
+       string queryName, string filter1, string filter2, string filter3, string filter4, string filter5)
         {
             try
             {
-                _log.Info($"GetPredefineQueryResult called. QueryName={queryName}, Filter1={filter1 ?? "null"}, Filter2={filter2 ?? "null"}");
+                _log.Info($"GetPredefineQueryResult called. QueryName={queryName}");
 
-                // ── 1. Load & cache the QueryName -> SQLQuery master list (reference data) ──
-                var cachedData = _distributedCache.GetString(CACHE_KEY_PredefineQueryMaster_All);
-                List<Dictionary<string, object>> allQueries;
+                // 1. Load all active query configs from cache (or DB on cache miss)
+                var cachedData = _distributedCache.GetString(CACHE_KEY_PredefineQueryConfig_All);
+                List<PredefineQueryConfig> allConfigs;
 
                 if (!string.IsNullOrEmpty(cachedData))
                 {
-                    _log.Info($"PredefineQueryMaster data retrieved from cache. Key={CACHE_KEY_PredefineQueryMaster_All}");
-                    allQueries = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData);
+                    _log.Info($"PredefineQueryConfig retrieved from cache. Key={CACHE_KEY_PredefineQueryConfig_All}");
+                    allConfigs = System.Text.Json.JsonSerializer.Deserialize<List<PredefineQueryConfig>>(cachedData)
+                                 ?? new List<PredefineQueryConfig>();
                 }
                 else
                 {
-                    _log.Info($"PredefineQueryMaster cache miss. Fetching from database. Key={CACHE_KEY_PredefineQueryMaster_All}");
+                    _log.Info($"PredefineQueryConfig cache miss. Fetching from database. Key={CACHE_KEY_PredefineQueryConfig_All}");
 
-                    var masterTable = _sqlHelper.GetDataTable(
-                        "SELECT QueryId, QueryName, SQLQuery FROM PredefineQueryMaster where isActive=1",
-                        CommandType.Text
-                    );
+                    var cfgTable = _sqlHelper.GetDataTable(
+                        "S_GetPredefineQueryConfig",
+                        CommandType.StoredProcedure);
 
-                    allQueries = masterTable.ToRawList();
-
-                    if (allQueries.Any())
+                    allConfigs = cfgTable?.AsEnumerable().Select(row => new PredefineQueryConfig
                     {
-                        var serialized = System.Text.Json.JsonSerializer.Serialize(allQueries);
+                        QueryId = row.Field<int>("QueryId"),
+                        QueryName = row.Field<string>("QueryName") ?? string.Empty,
+                        SPName = row.Field<string>("SPName") ?? string.Empty,
+                        Filter1 = row.Field<string>("Filter1"),
+                        Filter2 = row.Field<string>("Filter2"),
+                        Filter3 = row.Field<string>("Filter3"),
+                        Filter4 = row.Field<string>("Filter4"),
+                        Filter5 = row.Field<string>("Filter5")
+                    }).ToList() ?? new List<PredefineQueryConfig>();
+
+                    if (allConfigs.Any())
+                    {
+                        var serialized = System.Text.Json.JsonSerializer.Serialize(allConfigs);
                         var cacheOptions = new DistributedCacheEntryOptions
                         {
                             AbsoluteExpiration = null,
                             SlidingExpiration = null
                         };
-                        _distributedCache.SetString(CACHE_KEY_PredefineQueryMaster_All, serialized, cacheOptions);
-                        _log.Info($"PredefineQueryMaster data cached permanently. Key={CACHE_KEY_PredefineQueryMaster_All}, Count={allQueries.Count}");
+                        _distributedCache.SetString(CACHE_KEY_PredefineQueryConfig_All, serialized, cacheOptions);
+                        _log.Info($"PredefineQueryConfig cached permanently. Key={CACHE_KEY_PredefineQueryConfig_All}, Count={allConfigs.Count}");
                     }
                 }
 
-                // ── 2. Resolve SQLQuery text for the requested QueryName (case-insensitive) ──
-                var queryRow = allQueries.FirstOrDefault(row =>
-                    row.TryGetValue("QueryName", out var val) &&
-                    val != null &&
-                    val.ToString().Equals(queryName, StringComparison.OrdinalIgnoreCase));
+                // 2. Filter in memory by QueryName
+                var cfg = allConfigs.FirstOrDefault(c =>
+                    string.Equals(c.QueryName, queryName?.Trim(), StringComparison.OrdinalIgnoreCase));
 
-                if (queryRow == null)
+                if (cfg == null)
                 {
-                    var alertNotFound = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
-                    _log.Warn($"No predefined query found for QueryName={queryName}");
-                    return ServiceResult<object>.Failure(
-                        alertNotFound.Type,
-                        $"No predefined query found for QueryName: {queryName}",
-                        404
-                    );
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Warn($"Predefine query not found or inactive: {queryName}");
+                    return ServiceResult<object>.Failure(alert.Type, $"Predefine query '{queryName}' not found", 404);
                 }
 
-                string sqlQueryText = queryRow["SQLQuery"]?.ToString();
+                string spName = cfg.SPName?.Trim();
 
-                if (string.IsNullOrWhiteSpace(sqlQueryText))
+                // Safety: only PRE_ stored procedures are allowed
+                if (string.IsNullOrEmpty(spName) || !Regex.IsMatch(spName, @"^PRE_[A-Za-z0-9_]+$"))
                 {
-                    var alertEmpty = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
-                    _log.Warn($"SQLQuery is empty for QueryName={queryName}");
-                    return ServiceResult<object>.Failure(
-                        alertEmpty.Type,
-                        $"No SQL text configured for QueryName: {queryName}",
-                        404
-                    );
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    _log.Error($"Invalid SPName configured for query '{queryName}': {spName}");
+                    return ServiceResult<object>.Failure(alert.Type, "Invalid stored procedure configured for this query", 400);
                 }
 
-                // ── 3. Execute the resolved query with the optional filters ─────────────────
-                var resultTable = _sqlHelper.GetDataTable(
-                    sqlQueryText,
-                    CommandType.Text,
+                // 3. Validate filters: every filter that has a name in the table is mandatory
+                string[] configNames = { cfg.Filter1, cfg.Filter2, cfg.Filter3, cfg.Filter4, cfg.Filter5 };
+                string[] passedValues = { filter1, filter2, filter3, filter4, filter5 };
+                var filterValues = new string[5];
+                var missing = new List<string>();
+
+                for (int i = 0; i < 5; i++)
+                {
+                    string filterName = configNames[i]?.Trim();
+
+                    if (string.IsNullOrEmpty(filterName))
+                    {
+                        filterValues[i] = null;   // not used by this query – ignore anything passed
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(passedValues[i]))
+                        missing.Add($"Please enter filter{i + 1} value [{filterName}]");
+                    else
+                        filterValues[i] = passedValues[i].Trim();
+                }
+
+                if (missing.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    _log.Warn($"Missing filters for query '{queryName}': {string.Join("; ", missing)}");
+                    return ServiceResult<object>.Failure(alert.Type, string.Join(", ", missing), 400, missing);
+                }
+
+                // 4. Execute the SP with all 5 filters (result itself is NOT cached)
+                var dataTable = _sqlHelper.GetDataTable(
+                    spName,
+                    CommandType.StoredProcedure,
                     new
                     {
-                        filter1 = string.IsNullOrWhiteSpace(filter1) ? (object)DBNull.Value : filter1,
-                        filter2 = string.IsNullOrWhiteSpace(filter2) ? (object)DBNull.Value : filter2
-                    }
-                );
+                        @filter1 = filterValues[0],
+                        @filter2 = filterValues[1],
+                        @filter3 = filterValues[2],
+                        @filter4 = filterValues[3],
+                        @filter5 = filterValues[4]
+                    });
 
-                var result = resultTable.ToRawList();
-
-                if (!result.Any())
+                if (dataTable == null || dataTable.Rows.Count == 0)
                 {
-                    var alertNoRows = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
-                    _log.Info($"Predefined query '{queryName}' returned no rows.");
-                    return ServiceResult<object>.Failure(
-                        alertNoRows.Type,
-                        "No data found for the given query",
-                        404
-                    );
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No data found", 404);
                 }
 
-                _log.Info($"GetPredefineQueryResult retrieved {result.Count} row(s) for QueryName={queryName}");
+                // Raw SP output – new columns flow through automatically
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetPredefineQueryResult retrieved {result.Count} record(s) for QueryName={queryName}");
 
                 var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
-                return ServiceResult<object>.Success(
-                    result,
-                    alert1.Type,
-                    $"{result.Count} record(s) retrieved successfully",
-                    200
-                );
+                return ServiceResult<object>.Success(result, alert1.Type, $"{result.Count} record(s) retrieved successfully", 200);
             }
             catch (Exception ex)
             {

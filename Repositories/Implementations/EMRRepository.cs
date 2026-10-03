@@ -3542,8 +3542,8 @@ namespace HISWEBAPI.Repositories.Implementations
                     new
                     {
                         @doctorId = doctorId,
-                        @usedForPatientTypeId = usedForPatientTypeId,
-                        @applicableToId = applicableToId
+                        @usedForPatientTypeId = usedForPatientTypeId, // used for OPD or IPD or Both  (1,2,0)
+                        @applicableToId = applicableToId               // used for Nurse, Doctor, OT Notes , All
                     }
                 );
 

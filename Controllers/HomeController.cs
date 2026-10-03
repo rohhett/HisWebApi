@@ -141,15 +141,18 @@ namespace HISWEBAPI.Controllers
         [HttpGet("getPredefineQueryResult")]
         [Authorize]
         public IActionResult GetPredefineQueryResult(
-    [FromQuery] string queryName,
-    [FromQuery] string filter1 = null,
-    [FromQuery] string filter2 = null)
+     [FromQuery] string queryName,
+     [FromQuery] string filter1 = null,
+     [FromQuery] string filter2 = null,
+     [FromQuery] string filter3 = null,
+     [FromQuery] string filter4 = null,
+     [FromQuery] string filter5 = null)
         {
-            _log.Info($"GetPredefineQueryResult called. QueryName={queryName}, Filter1={filter1 ?? "null"}, Filter2={filter2 ?? "null"}");
+            _log.Info($"GetPredefineQueryResult called. QueryName={queryName}");
 
             if (string.IsNullOrWhiteSpace(queryName))
             {
-                _log.Warn("QueryName is missing or empty.");
+                _log.Warn("QueryName is missing.");
                 var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
                 return BadRequest(new
                 {
@@ -160,7 +163,7 @@ namespace HISWEBAPI.Controllers
                 });
             }
 
-            var serviceResult = _homeRepository.GetPredefineQueryResult(queryName, filter1, filter2);
+            var serviceResult = _homeRepository.GetPredefineQueryResult(queryName, filter1, filter2, filter3, filter4, filter5);
 
             if (serviceResult.Result)
                 _log.Info($"PredefineQueryResult fetched successfully: {serviceResult.Message}");
@@ -172,6 +175,7 @@ namespace HISWEBAPI.Controllers
                 result = serviceResult.Result,
                 messageType = serviceResult.MessageType,
                 message = serviceResult.Message,
+                errors = serviceResult.Errors,
                 data = serviceResult.Data
             });
         }

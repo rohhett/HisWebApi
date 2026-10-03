@@ -10,7 +10,7 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<MobileAppSettingsResponse> GetMobileAppSettings();
         ServiceResult<IEnumerable<BranchModel>> GetActiveBranchList();
         ServiceResult<IEnumerable<PickListModel>> GetPickListMaster(string fieldName);
-        ServiceResult<object> GetPredefineQueryResult(string queryName, string filter1, string filter2);
+        ServiceResult<object> GetPredefineQueryResult(string queryName, string filter1, string filter2, string filter3, string filter4, string filter5);
         ServiceResult<AllGlobalValues> GetAllGlobalValues();
         ServiceResult<string> ClearAllCache();
 
