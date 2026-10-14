@@ -496,6 +496,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     ReferenceType = row.Field<string>("ReferenceType"),
                     Remarks = row.Field<string>("Remarks"),
                     DoctorId = row.IsNull("DoctorId") ? 0 : row.Field<int>("DoctorId"),
+                    IPDVisitId = row.IsNull("IPDVisitId") ? 0 : row.Field<int>("IPDVisitId"),
                     IPDNo = row.Field<string>("IPDNo"),
                     DayCareNo = row.Field<string>("DayCareNo"),
                     DialysisNo = row.Field<string>("DialysisNo"),

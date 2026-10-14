@@ -455,7 +455,7 @@ namespace HISWEBAPI.Repositories.Implementations
                 long result = 0;
 
                 // Step 1: Create user login if IsLogin = 1
-                if (request.IsLogin == 1)
+                if (request.IsLogin == 1 && request.DoctorId==0)
                 {
                     _log.Info("Creating user login for doctor");
                     _distributedCache.Remove("_UserMaster_All");
@@ -469,7 +469,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         @FirstName = request.Name,
                         @MidelName = "",
                         @LastName = "",
-                        @Password = request.Password,
+                        @Password = PasswordHasher.HashPassword(request.Password),
                         @UserName = request.UserName,
                         @Gender = request.Gender
                     },
@@ -519,6 +519,8 @@ namespace HISWEBAPI.Repositories.Implementations
                     @CanApproveDischargeSummary = request.CanApproveDischargeSummary,
                     @DoctorPhotoFilePath = doctorPhotoFilePath ?? "",
                     @IsDoctorUnit = 0,
+                    @DoctorRole= request.DoctorRole??"",
+                    @DoctorRoleId= request.DoctorRoleId,
                     @UserId = globalValues.userId,
                     @HospId = globalValues.hospId,
                     @IPAddress = globalValues.ipAddress
@@ -713,7 +715,9 @@ namespace HISWEBAPI.Repositories.Implementations
                         CanApproveDischargeSummary = row.Field<int>("CanApproveDischargeSummary"),
                         DoctorPhotoFilePath = row.Field<string>("DoctorPhotoFilePath") ?? string.Empty,
                         IsDoctorUnit = row.Field<byte>("IsDoctorUnit"),
-                        RoomNo = row.Field<string>("RoomNo") ?? string.Empty
+                        RoomNo = row.Field<string>("RoomNo") ?? string.Empty,
+                        DoctorRoleId = row.Field<int?>("DoctorRoleId"),
+                        DoctorRole = row.Field<string>("DoctorRole")
                     }).ToList() ?? new List<DoctorMasterModelAll>();
 
                     // Store ALL doctors in cache (no expiration)

@@ -69,6 +69,7 @@
         public string? ReferenceType { get; set; }
         public string? Remarks { get; set; }
         public int DoctorId { get; set; } = 0;
+        public int IPDVisitId { get; set; } = 0;
         public string? IPDNo { get; set; }
         public string? DayCareNo { get; set; }
         public string? DialysisNo { get; set; }

@@ -100,6 +100,10 @@ namespace HISWEBAPI.DTO
         public string EmployeeID { get; set; }
         public int ReportToUserId { get; set; }
         public int UserDepartmentId { get; set; }
+        public int CanChangePassword { get; set; } = 0;
+        public int UserRoleId { get; set; } = 0;
+        [StringLength(100)]
+        public string UserRole { get; set; }
 
     }
 

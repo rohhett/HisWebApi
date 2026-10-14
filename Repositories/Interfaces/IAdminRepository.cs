@@ -12,7 +12,7 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<IEnumerable<FaIconModel>> getFaIconMaster();
         ServiceResult<UserMasterResponse> CreateUpdateUserMaster(UserMasterRequest request);
         ServiceResult<string> UpdateUserMasterStatus(int userId, int isActive, AllGlobalValues globalValues);
-        ServiceResult<IEnumerable<UserMasterModel>> UserMasterList(int? userId = null);
+        ServiceResult<IEnumerable<UserMasterModel>> UserMasterList(int? userId = null, int? userRoleId = null, int? isActive = null);
         ServiceResult<string> CreateUpdateUserDepartment(UserDepartmentRequest request, AllGlobalValues globalValues);
         ServiceResult<string> UpdateUserDepartmentStatus(int id, int isActive, AllGlobalValues globalValues);
         ServiceResult<IEnumerable<UserDepartmentMasterModel>> UserDepartmentList(int? id = null);

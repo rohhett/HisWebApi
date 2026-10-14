@@ -257,11 +257,28 @@ namespace HISWEBAPI.Controllers
 
         [HttpGet("userMasterList")]
         [Authorize]
-        public IActionResult UserMasterList([FromQuery] int? userId = null)
+        public IActionResult UserMasterList(
+            [FromQuery] int? userId = null,
+            [FromQuery] int? userRoleId = null,
+            [FromQuery] int? isActive = null
+            )
         {
             _log.Info($"UserMasterList called. UserId={userId?.ToString() ?? "All"}");
 
-            var serviceResult = _adminRepository.UserMasterList(userId);
+            if (isActive.HasValue && isActive.Value != 0 && isActive.Value != 1)
+            {
+                _log.Warn($"Invalid IsActive parameter: {isActive.Value}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "IsActive must be 0 (Inactive), 1 (Active), or null (All)",
+                    errors = new { isActive }
+                });
+            }
+
+            var serviceResult = _adminRepository.UserMasterList(userId, userRoleId, isActive);
 
             if (serviceResult.Result)
                 _log.Info($"Users fetched successfully from cache: {serviceResult.Message}");

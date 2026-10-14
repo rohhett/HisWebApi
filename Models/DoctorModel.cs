@@ -1,4 +1,6 @@
-﻿namespace HISWEBAPI.Models
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace HISWEBAPI.Models
 {
     public class DoctorDepartmentModel
     {
@@ -48,6 +50,8 @@
         public string DoctorPhotoFilePath { get; set; }
         public byte IsDoctorUnit { get; set; }
         public string RoomNo { get; set; }
+        public int? DoctorRoleId { get; set; }
+        public string DoctorRole { get; set; }
     }
 
     public class DoctorUnitMappingModel

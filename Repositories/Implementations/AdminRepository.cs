@@ -384,6 +384,10 @@ namespace HISWEBAPI.Repositories.Implementations
                     new SqlParameter("@EmployeeID",request.EmployeeID),
                     new SqlParameter("@UserDepartmentId",request.UserDepartmentId),
                     new SqlParameter("@ReportToUserId",request.ReportToUserId),
+                    new SqlParameter("@CanChangePassword",request.CanChangePassword),
+                    new SqlParameter("@UserRoleId",request.UserRoleId),
+                    new SqlParameter("@UserRole", request.UserRole ?? (object)DBNull.Value),
+
                     new SqlParameter("@Result", SqlDbType.BigInt) { Direction = ParameterDirection.Output }
                 };
 
@@ -494,7 +498,7 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
-        public ServiceResult<IEnumerable<UserMasterModel>> UserMasterList(int? userId = null)
+        public ServiceResult<IEnumerable<UserMasterModel>> UserMasterList(int? userId = null, int? userRoleId = null, int? isActive = null)
         {
             try
             {
@@ -542,7 +546,9 @@ namespace HISWEBAPI.Repositories.Implementations
                         LastModifiedBy = row.Field<string>("LastModifiedBy"),
                         LastModifiedOn = row.Field<string>("LastModifiedOn"),
                         ReportToUserId = row.Field<int?>("ReportToUserId"),
-                        UserDepartmentId = row.Field<int?>("UserDepartmentId")
+                        UserDepartmentId = row.Field<int?>("UserDepartmentId"),
+                        UserRoleId = row.Field<int?>("UserRoleId"),
+                        UserRole = row.Field<string>("UserRole"),
                     }).ToList() ?? new List<UserMasterModel>();
 
                     // Store ALL users in cache (no expiration)
@@ -561,19 +567,27 @@ namespace HISWEBAPI.Repositories.Implementations
                 }
 
                 // Filter in memory based on userId parameter (always from cache)
-                List<UserMasterModel> filteredUsers;
+
                 if (userId.HasValue)
                 {
                     _log.Info($"Filtering cached data by UserId: {userId.Value}");
-                    filteredUsers = allUsers.Where(u => u.Id == userId.Value).ToList();
-                }
-                else
-                {
-                    _log.Info("Returning all cached users");
-                    filteredUsers = allUsers;
+                    allUsers = allUsers.Where(u => u.Id == userId.Value).ToList();
                 }
 
-                if (!filteredUsers.Any())
+                if (userRoleId.HasValue && userRoleId.Value>0)
+                {
+                    _log.Info($"Filtering cached data by UserRoleId: {userRoleId.Value}");
+                    allUsers = allUsers.Where(u => u.UserRoleId == userRoleId.Value).ToList();
+                }
+
+                if (isActive.HasValue)
+                {
+                    _log.Info($"Filtering cached data by IsActive: {isActive.Value}");
+                    allUsers = allUsers.Where(u => u.IsActive == isActive.Value).ToList();
+                }
+
+
+                if (!allUsers.Any())
                 {
                     var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
                     _log.Info($"No users found for UserId: {userId?.ToString() ?? "All"}");
@@ -586,12 +600,12 @@ namespace HISWEBAPI.Repositories.Implementations
                     );
                 }
 
-                _log.Info($"Retrieved {filteredUsers.Count} user(s) from cache");
+                _log.Info($"Retrieved {allUsers.Count} user(s) from cache");
 
                 return ServiceResult<IEnumerable<UserMasterModel>>.Success(
-                    filteredUsers,
+                    allUsers,
                     "Info",
-                    $"{filteredUsers.Count} user(s) fetched successfully",
+                    $"{allUsers.Count} user(s) fetched successfully",
                     200
                 );
             }

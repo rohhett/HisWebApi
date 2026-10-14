@@ -1924,7 +1924,9 @@ namespace HISWEBAPI.Repositories.Implementations
         public ServiceResult<IEnumerable<DoctorMasterModel>> GetDoctorMasterListByBranchId(
       int branchId,
       string departmentId = null,
+      string departmentTypeId = null,
       string specializationId = null,
+      string doctorRoleId = null,
       int? canApproveLabReport = null,
       byte? isDoctorUnit = null)
         {
@@ -1956,6 +1958,18 @@ namespace HISWEBAPI.Repositories.Implementations
                     _log.Info($"Parsed DepartmentIds: {string.Join(",", departmentIds)}");
                 }
 
+                HashSet<int> departmentTypeIds = null;
+                if (!string.IsNullOrWhiteSpace(departmentTypeId))
+                {
+                    departmentTypeIds = new HashSet<int>(
+                        departmentTypeId.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(x => x.Trim())
+                            .Where(x => int.TryParse(x, out _))
+                            .Select(int.Parse)
+                    );
+                    _log.Info($"Parsed departmentTypeIds: {string.Join(",", departmentTypeIds)}");
+                }
+
                 HashSet<int> specializationIds = null;
                 if (!string.IsNullOrWhiteSpace(specializationId))
                 {
@@ -1966,6 +1980,18 @@ namespace HISWEBAPI.Repositories.Implementations
                             .Select(int.Parse)
                     );
                     _log.Info($"Parsed SpecializationIds: {string.Join(",", specializationIds)}");
+                }
+
+                HashSet<int> doctorRoleIds = null;
+                if (!string.IsNullOrWhiteSpace(doctorRoleId))
+                {
+                    doctorRoleIds = new HashSet<int>(
+                        doctorRoleId.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(x => x.Trim())
+                            .Where(x => int.TryParse(x, out _))
+                            .Select(int.Parse)
+                    );
+                    _log.Info($"Parsed doctorRoleIds: {string.Join(",", doctorRoleIds)}");
                 }
 
                 string cacheKey = $"_DoctorMaster_Branch{branchId}";
@@ -1993,8 +2019,11 @@ namespace HISWEBAPI.Repositories.Implementations
                         Name = row.Field<string>("Name") ?? string.Empty,
                         SpecializationId = row.Field<int>("SpecializationId"),
                         DepartmentId = row.Field<int>("DepartmentId"),
+                        DepartmentTypeId = row.Field<int>("DepartmentTypeId"),
                         CanApproveLabReport = row.Field<int>("CanApproveLabReport"),
-                        IsDoctorUnit = row.Field<byte>("IsDoctorUnit")
+                        IsDoctorUnit = row.Field<byte>("IsDoctorUnit"),
+                        DoctorRoleId = row.Field<int>("DoctorRoleId"),
+                        DoctorRole = row.Field<string>("DoctorRole")
                     }).ToList() ?? new List<DoctorMasterModel>();
 
                     if (allDoctors.Any())
@@ -2019,10 +2048,22 @@ namespace HISWEBAPI.Repositories.Implementations
                     filteredDoctors = filteredDoctors.Where(d => departmentIds.Contains(d.DepartmentId)).ToList();
                 }
 
+                if (departmentTypeIds != null && departmentTypeIds.Any())
+                {
+                    _log.Info($"Filtering cached data by departmentTypeIds: {string.Join(",", departmentTypeIds)}");
+                    filteredDoctors = filteredDoctors.Where(d => departmentTypeIds.Contains(d.DepartmentTypeId)).ToList();
+                }
+
                 if (specializationIds != null && specializationIds.Any())
                 {
                     _log.Info($"Filtering cached data by SpecializationIds: {string.Join(",", specializationIds)}");
                     filteredDoctors = filteredDoctors.Where(d => specializationIds.Contains(d.SpecializationId)).ToList();
+                }
+
+                if (doctorRoleIds != null && doctorRoleIds.Any())
+                {
+                    _log.Info($"Filtering cached data by doctorRoleIds: {string.Join(",", doctorRoleIds)}");
+                    filteredDoctors = filteredDoctors.Where(d => doctorRoleIds.Contains(d.DoctorRoleId)).ToList();
                 }
 
                 if (canApproveLabReport.HasValue)

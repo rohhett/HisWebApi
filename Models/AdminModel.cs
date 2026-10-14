@@ -76,6 +76,8 @@ namespace HISWEBAPI.Models
         public string? LastModifiedOn { get; set; }
         public int? ReportToUserId { get; set; }
         public int? UserDepartmentId { get; set; }
+        public int? UserRoleId { get; set; }
+        public string? UserRole { get; set; }
     }
 
 

@@ -47,5 +47,15 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<object> GetCurrentOTProcess(int visitId);
         ServiceResult<object> CompletePatientOTProcess(CompletePatientOTProcessRequest request, AllGlobalValues globalValues);
         ServiceResult<object> ValidatePatientOTProcess(int visitId);
+        ServiceResult<SaveOTBookingResponse> SaveOTBooking(SaveOTBookingRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetOTBookingDetails(string? otBookingNo, string fromDate, string toDate, string? uhid, string? ipdNo);
+        ServiceResult<object> GetOTBookingItemDetails(int otBookingId);
+        ServiceResult<string> CancelOTBooking(CancelOTBookingRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> ConfirmOTBooking(ConfirmOTBookingRequest request, AllGlobalValues globalValues);
+        ServiceResult<string> RescheduleOTBooking(RescheduleOTBookingRequest request, AllGlobalValues globalValues);
+        ServiceResult<AddBreakInOTBookingResponse> AddBreakInOTBooking(AddBreakInOTBookingRequest request, AllGlobalValues globalValues);
+
+        ServiceResult<SavePatientOTNotesResponse> SavePatientOTNotes(SavePatientOTNotesRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetPatientOTNotesByVisitId(int visitId);
     }
 }

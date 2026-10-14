@@ -50,8 +50,11 @@
         public string Name { get; set; }
         public int SpecializationId { get; set; }
         public int DepartmentId { get; set; }
+        public int DepartmentTypeId { get; set; }
         public int CanApproveLabReport { get; set; }
         public byte IsDoctorUnit { get; set; }
+        public int DoctorRoleId { get; set; }
+        public string DoctorRole { get; set; }
     }
 
     public class LocationByPincodeModel

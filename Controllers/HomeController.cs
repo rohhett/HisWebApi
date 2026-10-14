@@ -887,7 +887,9 @@ namespace HISWEBAPI.Controllers
         public IActionResult GetDoctorMasterListByBranchId(
            [FromQuery] int branchId,
            [FromQuery] string departmentId = null,
+           [FromQuery] string departmentTypeId = null,
            [FromQuery] string specializationId = null,
+           [FromQuery] string doctorRoleId = null,
            [FromQuery] int? canApproveLabReport = null,
            [FromQuery] byte? isDoctorUnit = null)
         {
@@ -924,6 +926,24 @@ namespace HISWEBAPI.Controllers
                 }
             }
 
+            // Validate departmentTypeId format if provided
+            if (!string.IsNullOrWhiteSpace(departmentTypeId))
+            {
+                var parts = departmentTypeId.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Any(p => !int.TryParse(p.Trim(), out _)))
+                {
+                    _log.Warn($"Invalid departmentTypeId format: {departmentTypeId}");
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return BadRequest(new
+                    {
+                        result = false,
+                        messageType = alert.Type,
+                        message = "departmentTypeId must be a comma-separated list of integers (e.g. 1,2,3)",
+                        errors = new { departmentTypeId }
+                    });
+                }
+            }
+
             // Validate specializationId format if provided
             if (!string.IsNullOrWhiteSpace(specializationId))
             {
@@ -942,10 +962,30 @@ namespace HISWEBAPI.Controllers
                 }
             }
 
+            // Validate doctorRoleId format if provided
+            if (!string.IsNullOrWhiteSpace(doctorRoleId))
+            {
+                var parts = doctorRoleId.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Any(p => !int.TryParse(p.Trim(), out _)))
+                {
+                    _log.Warn($"Invalid doctorRoleId format: {doctorRoleId}");
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return BadRequest(new
+                    {
+                        result = false,
+                        messageType = alert.Type,
+                        message = "doctorRoleId must be a comma-separated list of integers (e.g. 1,2,3)",
+                        errors = new { doctorRoleId }
+                    });
+                }
+            }
+
             var serviceResult = _homeRepository.GetDoctorMasterListByBranchId(
                 branchId,
                 departmentId,
+                departmentTypeId,
                 specializationId,
+                doctorRoleId,
                 canApproveLabReport,
                 isDoctorUnit);
 

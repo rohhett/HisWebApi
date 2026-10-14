@@ -117,6 +117,9 @@ namespace HISWEBAPI.DTO
         public string? UserName { get; set; }
 
         public string? Password { get; set; }
+        public int DoctorRoleId { get; set; } = 0;
+        [StringLength(100)]
+        public string? DoctorRole { get; set; }
     }
 
     public class CreateUpdateDoctorMasterResponse

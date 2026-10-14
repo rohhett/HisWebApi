@@ -2846,5 +2846,610 @@ namespace HISWEBAPI.Repositories.Implementations
                     return (null, null, 0);
             }
         }
+
+        // ─── OT Booking ────────────────────────────────────────────────────────────
+
+        public ServiceResult<SaveOTBookingResponse> SaveOTBooking(SaveOTBookingRequest request, AllGlobalValues globalValues)
+        {
+            var connectionString = _configuration.GetConnectionString("ConnectionString");
+            SqlConnection con = new SqlConnection(connectionString);
+            con.Open();
+            var tnx = CustomSqlHelper.getSqlTransaction(con);
+
+            try
+            {
+                _log.Info($"SaveOTBooking called. PatientId={request.PatientId}, OTId={request.OTId}, BranchId={request.BranchId}");
+
+                // ── Parse date / times ───────────────────────────────────────────────
+                if (!DateTime.TryParse(request.OTBookingDate, out DateTime bookingDate))
+                {
+                    tnx.Rollback();
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<SaveOTBookingResponse>.Failure(a.Type, "Invalid OTBookingDate format", 400);
+                }
+
+                if (!TimeSpan.TryParse(request.OTBookingFromTime, out TimeSpan fromTime) ||
+                    !TimeSpan.TryParse(request.OTBookingToTime, out TimeSpan toTime) || toTime <= fromTime)
+                {
+                    tnx.Rollback();
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<SaveOTBookingResponse>.Failure(a.Type, "Invalid OT booking time. To time must be greater than From time", 400);
+                }
+
+
+                // ── 0. Time conflict check (same transaction, so concurrent saves can't double-book) ──
+                var conflictTable = _sqlHelper.GetDataTable(
+                    tnx,
+                    "S_CheckOTBookingTimeConflict",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @OTId = request.OTId,
+                        @OTBookingDate = bookingDate.Date,
+                        @OTBookingFromTime = fromTime,
+                        @OTBookingToTime = toTime,
+                    });
+
+                if (conflictTable != null && conflictTable.Rows.Count > 0 &&
+                    Convert.ToInt32(conflictTable.Rows[0]["IsConflict"]) == 1)
+                {
+                    tnx.Rollback();
+
+                    var c = conflictTable.Rows[0];
+                    string conflictFrom = ((TimeSpan)c["OTBookingFromTime"]).ToString(@"hh\:mm");
+                    string conflictTo = ((TimeSpan)c["OTBookingToTime"]).ToString(@"hh\:mm");
+                    string conflictRef = c["OTBookingNo"] == DBNull.Value
+                        ? "a break / blocked slot"
+                        : $"booking {Convert.ToString(c["OTBookingNo"])}";
+
+                    _log.Warn($"SaveOTBooking time conflict. OTId={request.OTId}, Date={bookingDate:yyyy-MM-dd}, Requested={request.OTBookingFromTime}-{request.OTBookingToTime}, ConflictsWith={conflictRef} ({conflictFrom}-{conflictTo})");
+
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<SaveOTBookingResponse>.Failure(
+                        a.Type,
+                        $"OT is already booked from {conflictFrom} to {conflictTo} ({conflictRef}). Please select a different time slot.",
+                        409);
+                }
+
+
+                // ── 1. Insert header (SP generates OTBookingNo from branch sequence) ──
+                var headerTable = _sqlHelper.GetDataTable(
+                    tnx,
+                    "I_OTBookingDetails",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @BranchId = request.BranchId,
+                        @RoleId = request.RoleId,
+                        @PatientId = request.PatientId,
+                        @VisitId = request.VisitId,
+                        @OTTypeId = request.OTTypeId,
+                        @OTType = request.OTType,
+                        @OTId = request.OTId,
+                        @OTBookingDate = bookingDate.Date,
+                        @OTBookingFromTime = fromTime,
+                        @OTBookingToTime = toTime,
+                        @SurgeonIdList = string.Join(",", request.SurgeonIds),
+                        @AssistantSurgeonId1 = request.AssistantSurgeonId1,
+                        @AssistantSurgeonId2 = request.AssistantSurgeonId2,
+                        @AnesthetistId = request.AnesthetistId,
+                        @AssistantAnesthetistId = request.AssistantAnesthetistId,
+                        @Anesthesia = request.Anesthesia,
+                        @ScrubNurseUserId = request.ScrubNurseUserId,
+                        @CirculatingNurseUserId = request.CirculatingNurseUserId,
+                        @OTTechnicianUserId = request.OTTechnicianUserId,
+                        @ATTechnicianUserId = request.ATTechnicianUserId,
+                        @PerfusionistUserId = request.PerfusionistUserId,
+                        @IsBloodRequired = request.IsBloodRequired,
+                        @NumberOfBloodUnits = request.NumberOfBloodUnits,
+                        @IsVentilatorRequired = request.IsVentilatorRequired,
+                        @IsICURequired = request.IsICURequired,
+                        @IsUnderPackage = request.IsUnderPackage,
+                        @BloodGroupId = request.BloodGroupId,
+                        @IsInfectiousCase = request.IsInfectiousCase,
+                        @InfectiousCaseRemarks = request.InfectiousCaseRemarks,
+                        @DiagnosisSNOMEDCode = request.DiagnosisSNOMEDCode,
+                        @DiagnosisName = request.DiagnosisName,
+                        @IsEquipmentRequest = request.IsEquipmentRequest,
+                        @EquipmentServiceItemIdList = request.EquipmentServiceItemIds?.Count > 0
+                            ? string.Join(",", request.EquipmentServiceItemIds) : null,
+                        @UserId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+
+                if (headerTable == null || headerTable.Rows.Count == 0)
+                {
+                    tnx.Rollback();
+                    var a = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                    return ServiceResult<SaveOTBookingResponse>.Failure(a.Type, a.Message, 500);
+                }
+
+                int otBookingId = Convert.ToInt32(headerTable.Rows[0]["OTBookingId"]);
+
+              
+
+                string otBookingNo = Convert.ToString(headerTable.Rows[0]["OTBookingNo"]);
+                _log.Info($"OTBookingDetails created. OTBookingId={otBookingId}, OTBookingNo={otBookingNo}");
+
+                // ── 2. Insert each booking item ──────────────────────────────────────
+                foreach (var item in request.BookingItems)
+                {
+                    if (!TimeSpan.TryParse(item.OTBookingFromTime, out TimeSpan itemFrom) ||
+                        !TimeSpan.TryParse(item.OTBookingToTime, out TimeSpan itemTo) || itemTo <= itemFrom)
+                    {
+                        tnx.Rollback();
+                        var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                        return ServiceResult<SaveOTBookingResponse>.Failure(
+                            a.Type, $"Invalid item time for ServiceItemId={item.ServiceItemId}", 400);
+                    }
+
+                    _sqlHelper.DML(
+                        tnx,
+                        "I_OTBookingItemDetails",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @OTBookingId = otBookingId,
+                            @ServiceItemId = item.ServiceItemId,
+                            @OTBookingFromTime = itemFrom,
+                            @OTBookingToTime = itemTo,
+                            @IsMainSurgery = item.IsMainSurgery,
+                            @UserId = globalValues.userId,
+                            @IpAddress = globalValues.ipAddress
+                        });
+                }
+
+                tnx.Commit();
+                _log.Info($"SaveOTBooking committed. OTBookingId={otBookingId}, Items={request.BookingItems.Count}");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<SaveOTBookingResponse>.Success(
+                    new SaveOTBookingResponse { OTBookingId = otBookingId, OTBookingNo = otBookingNo },
+                    alert.Type,
+                    "OT booking saved successfully",
+                    201
+                );
+            }
+            catch (Exception ex)
+            {
+                try { tnx.Rollback(); } catch { /* swallow rollback exception */ }
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<SaveOTBookingResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+            finally
+            {
+                tnx.Dispose();
+                if (con.State == ConnectionState.Open)
+                    con.Close();
+            }
+        }
+
+        public ServiceResult<object> GetOTBookingDetails(string? otBookingNo, string fromDate, string toDate, string? uhid, string? ipdNo)
+        {
+            try
+            {
+                _log.Info($"GetOTBookingDetails called. OTBookingNo={otBookingNo ?? "All"}, FromDate={fromDate}, ToDate={toDate}, UHID={uhid ?? "All"}, IPDNo={ipdNo ?? "All"}");
+
+                if (!DateTime.TryParse(fromDate, out DateTime parsedFrom))
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<object>.Failure(a.Type, "Invalid FromDate format", 400);
+                }
+
+                if (!DateTime.TryParse(toDate, out DateTime parsedTo))
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<object>.Failure(a.Type, "Invalid ToDate format", 400);
+                }
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetOTBookingDetails",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @OTBookingNo = string.IsNullOrWhiteSpace(otBookingNo) ? null : otBookingNo.Trim(),
+                        @FromDate = parsedFrom.Date,
+                        @ToDate = parsedTo.Date,
+                        @UHID = string.IsNullOrWhiteSpace(uhid) ? null : uhid.Trim(),
+                        @IPDNo = string.IsNullOrWhiteSpace(ipdNo) ? null : ipdNo.Trim()
+                    });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No OT bookings found", 404);
+                }
+
+                // Raw SP output – new columns flow through automatically
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetOTBookingDetails retrieved {result.Count} record(s)");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, alert1.Type, $"{result.Count} OT booking(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetOTBookingItemDetails(int otBookingId)
+        {
+            try
+            {
+                _log.Info($"GetOTBookingItemDetails called. OTBookingId={otBookingId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetOTBookingItemDetails",
+                    CommandType.StoredProcedure,
+                    new { @OTBookingId = otBookingId });
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No OT booking items found", 404);
+                }
+
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetOTBookingItemDetails retrieved {result.Count} record(s)");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, alert1.Type, $"{result.Count} item(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        // ─── OT Booking actions (no cache) ─────────────────────────────────────────
+
+        public ServiceResult<string> CancelOTBooking(CancelOTBookingRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CancelOTBooking called. OTBookingId={request.OTBookingId}");
+
+                var dt = _sqlHelper.GetDataTable(
+                    "U_CancelOTBooking",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @OTBookingId = request.OTBookingId,
+                        @CancelReason = string.IsNullOrWhiteSpace(request.CancelReason) ? null : request.CancelReason.Trim(),
+                        @UserId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+
+                int result = (dt != null && dt.Rows.Count > 0) ? Convert.ToInt32(dt.Rows[0]["Result"]) : 0;
+
+                if (result == -1)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<string>.Failure(a.Type, "OT booking not found", 404);
+                }
+                if (result == -2)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, "OT booking is already cancelled", 409);
+                }
+                if (result != 1)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, a.Message, 500);
+                }
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success("OT booking cancelled successfully", alert.Type, alert.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> ConfirmOTBooking(ConfirmOTBookingRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"ConfirmOTBooking called. OTBookingId={request.OTBookingId}");
+
+                var dt = _sqlHelper.GetDataTable(
+                    "U_ConfirmOTBooking",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @OTBookingId = request.OTBookingId,
+                        @UserId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+
+                int result = (dt != null && dt.Rows.Count > 0) ? Convert.ToInt32(dt.Rows[0]["Result"]) : 0;
+
+                if (result == -1)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<string>.Failure(a.Type, "OT booking not found", 404);
+                }
+                if (result == -2)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, "Cancelled OT booking cannot be confirmed", 409);
+                }
+                if (result == -3)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, "OT booking is already confirmed", 409);
+                }
+                if (result != 1)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, a.Message, 500);
+                }
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success("OT booking confirmed successfully", alert.Type, alert.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> RescheduleOTBooking(RescheduleOTBookingRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"RescheduleOTBooking called. OTBookingId={request.OTBookingId}, OTId={request.OTId}, Date={request.OTBookingDate}");
+
+                if (!DateTime.TryParse(request.OTBookingDate, out DateTime bookingDate))
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<string>.Failure(a.Type, "Invalid OTBookingDate format", 400);
+                }
+
+                if (!TimeSpan.TryParse(request.OTBookingFromTime, out TimeSpan fromTime) ||
+                    !TimeSpan.TryParse(request.OTBookingToTime, out TimeSpan toTime) || toTime <= fromTime)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<string>.Failure(a.Type, "Invalid OT booking time. To time must be greater than From time", 400);
+                }
+
+                var dt = _sqlHelper.GetDataTable(
+                    "U_RescheduleOTBooking",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @OTBookingId = request.OTBookingId,
+                        @OTId = request.OTId,
+                        @OTBookingDate = bookingDate.Date,
+                        @OTBookingFromTime = fromTime,
+                        @OTBookingToTime = toTime,
+                        @UserId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+
+                int result = (dt != null && dt.Rows.Count > 0) ? Convert.ToInt32(dt.Rows[0]["Result"]) : 0;
+
+                if (result == -1)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<string>.Failure(a.Type, "OT booking not found", 404);
+                }
+                if (result == -2)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, "Cancelled OT booking cannot be rescheduled", 409);
+                }
+                if (result == -3)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, "Selected OT slot is already booked for the given date and time", 409);
+                }
+                if (result != 1)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<string>.Failure(a.Type, a.Message, 500);
+                }
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<string>.Success("OT booking rescheduled successfully", alert.Type, alert.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<AddBreakInOTBookingResponse> AddBreakInOTBooking(AddBreakInOTBookingRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"AddBreakInOTBooking called. OTId={request.OTId}, Date={request.OTBookingDate}");
+
+                if (!DateTime.TryParse(request.OTBookingDate, out DateTime bookingDate))
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<AddBreakInOTBookingResponse>.Failure(a.Type, "Invalid OTBookingDate format", 400);
+                }
+
+                if (!TimeSpan.TryParse(request.OTBookingFromTime, out TimeSpan fromTime) ||
+                    !TimeSpan.TryParse(request.OTBookingToTime, out TimeSpan toTime) || toTime <= fromTime)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<AddBreakInOTBookingResponse>.Failure(a.Type, "Invalid break time. To time must be greater than From time", 400);
+                }
+
+                var dt = _sqlHelper.GetDataTable(
+                    "I_AddBreakInOTBooking",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @OTId = request.OTId,
+                        @OTBookingDate = bookingDate.Date,
+                        @OTBookingFromTime = fromTime,
+                        @OTBookingToTime = toTime,
+                        @UserId = globalValues.userId,
+                        @IpAddress = globalValues.ipAddress
+                    });
+
+                int result = (dt != null && dt.Rows.Count > 0) ? Convert.ToInt32(dt.Rows[0]["Result"]) : 0;
+
+                if (result == -3)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<AddBreakInOTBookingResponse>.Failure(a.Type, "Selected OT slot is already booked for the given date and time", 409);
+                }
+                if (result <= 0)
+                {
+                    var a = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                    return ServiceResult<AddBreakInOTBookingResponse>.Failure(a.Type, a.Message, 500);
+                }
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<AddBreakInOTBookingResponse>.Success(
+                    new AddBreakInOTBookingResponse { OTBookingId = result },
+                    alert.Type,
+                    "Break added successfully",
+                    201);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<AddBreakInOTBookingResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+        public ServiceResult<SavePatientOTNotesResponse> SavePatientOTNotes(
+    SavePatientOTNotesRequest request,
+    AllGlobalValues globalValues)
+        {
+            var connectionString = _configuration.GetConnectionString("ConnectionString");
+            SqlConnection con = new SqlConnection(connectionString);
+            con.Open();
+            var tnx = CustomSqlHelper.getSqlTransaction(con);
+
+            try
+            {
+                var first = request.OTNotesHeadersData.First();
+                _log.Info($"SavePatientOTNotes called. PatientId={first.PatientId}, VisitId={first.VisitId}, Rows={request.OTNotesHeadersData.Count}");
+
+                int savedCount = 0;
+
+                foreach (var h in request.OTNotesHeadersData)
+                {
+                    _sqlHelper.DML(
+                        tnx,
+                        "IU_PatientOTNotesData",
+                        CommandType.StoredProcedure,
+                        new
+                        {
+                            @id = h.DataId,
+                            @patientId = h.PatientId,
+                            @visitId = h.VisitId,
+                            @sectionId = h.SectionId,
+                            @headerId = h.HeaderId,
+                            @controlTypeId = h.ControlTypeId,
+                            @templateId = h.TemplateId,
+                            @headerValue = (object)h.HeaderValue ?? DBNull.Value,
+                            @userId = globalValues.userId,
+                            @ipAddress = globalValues.ipAddress
+                        });
+                    savedCount++;
+                }
+
+                tnx.Commit();
+                _log.Info($"SavePatientOTNotes committed. VisitId={first.VisitId}, Saved={savedCount}");
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                return ServiceResult<SavePatientOTNotesResponse>.Success(
+                    new SavePatientOTNotesResponse
+                    {
+                        PatientId = first.PatientId,
+                        VisitId = first.VisitId,
+                        SavedCount = savedCount
+                    },
+                    alert.Type,
+                    "OT notes saved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                try { tnx.Rollback(); } catch { /* swallow rollback exception */ }
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<SavePatientOTNotesResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+            finally
+            {
+                tnx.Dispose();
+                if (con.State == ConnectionState.Open)
+                    con.Close();
+            }
+        }
+
+        public ServiceResult<object> GetPatientOTNotesByVisitId(int visitId)
+        {
+            try
+            {
+                _log.Info($"GetPatientOTNotesByVisitId called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetPatientOTNotesByVisitId",
+                    CommandType.StoredProcedure,
+                    new { @visitId = visitId }
+                );
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No OT notes found for VisitId={visitId}");
+                    return ServiceResult<object>.Failure(alert.Type, "No OT notes found for the given visit", 404);
+                }
+
+                // Raw SP output, no model mapping — new SP columns surface automatically
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetPatientOTNotesByVisitId retrieved {result.Count} record(s)");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(result, alert1.Type, $"{result.Count} OT note row(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
     }
 }

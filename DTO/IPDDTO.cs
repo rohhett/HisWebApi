@@ -667,4 +667,224 @@ namespace HISWEBAPI.DTO
         public string? Remarks { get; set; }
     }
 
+    // ─── OT Booking ────────────────────────────────────────────────────────────
+
+    public class SaveOTBookingRequest
+    {
+        [Required(ErrorMessage = "BranchId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than 0")]
+        public int BranchId { get; set; }
+
+        [Required(ErrorMessage = "RoleId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "RoleId must be greater than 0")]
+        public int RoleId { get; set; }
+
+        [Required(ErrorMessage = "PatientId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "PatientId must be greater than 0")]
+        public int PatientId { get; set; }
+
+        public int? VisitId { get; set; }
+
+        [Required(ErrorMessage = "OTTypeId is required")]
+        public int OTTypeId { get; set; }
+
+        [StringLength(20, ErrorMessage = "OTType cannot exceed 20 characters")]
+        public string? OTType { get; set; }
+
+        [Required(ErrorMessage = "OTId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTId must be greater than 0")]
+        public int OTId { get; set; }
+
+        [Required(ErrorMessage = "OTBookingDate is required")]
+        public string OTBookingDate { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingFromTime is required")]
+        public string OTBookingFromTime { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingToTime is required")]
+        public string OTBookingToTime { get; set; }
+
+        [Required(ErrorMessage = "At least one surgeon is required")]
+        [MinLength(1, ErrorMessage = "At least one surgeon is required")]
+        public List<int> SurgeonIds { get; set; } = new();
+
+        public int? AssistantSurgeonId1 { get; set; }
+        public int? AssistantSurgeonId2 { get; set; }
+        public int? AnesthetistId { get; set; }
+        public int? AssistantAnesthetistId { get; set; }
+
+        [StringLength(50, ErrorMessage = "Anesthesia cannot exceed 50 characters")]
+        public string? Anesthesia { get; set; }
+
+        public int? ScrubNurseUserId { get; set; }
+        public int? CirculatingNurseUserId { get; set; }
+        public int? OTTechnicianUserId { get; set; }
+        public int? ATTechnicianUserId { get; set; }
+        public int? PerfusionistUserId { get; set; }
+
+        public int IsBloodRequired { get; set; } = 0;
+        public int NumberOfBloodUnits { get; set; } = 0;
+        public int IsVentilatorRequired { get; set; } = 0;
+        public int IsICURequired { get; set; } = 0;
+        public int IsUnderPackage { get; set; } = 0;
+        public int? BloodGroupId { get; set; }
+
+        public int IsInfectiousCase { get; set; } = 0;
+        public string? InfectiousCaseRemarks { get; set; }
+
+        [StringLength(50, ErrorMessage = "DiagnosisSNOMEDCode cannot exceed 50 characters")]
+        public string? DiagnosisSNOMEDCode { get; set; }
+
+        [StringLength(100, ErrorMessage = "DiagnosisName cannot exceed 100 characters")]
+        public string? DiagnosisName { get; set; }
+
+        public int IsEquipmentRequest { get; set; } = 0;
+        public List<int> EquipmentServiceItemIds { get; set; } = new();
+
+      
+
+        [Required(ErrorMessage = "At least one booking item is required")]
+        [MinLength(1, ErrorMessage = "At least one booking item is required")]
+        public List<OTBookingItemRequest> BookingItems { get; set; }
+    }
+
+    public class OTBookingItemRequest
+    {
+        [Required(ErrorMessage = "ServiceItemId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "ServiceItemId must be greater than 0")]
+        public int ServiceItemId { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingFromTime is required")]
+        public string OTBookingFromTime { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingToTime is required")]
+        public string OTBookingToTime { get; set; }
+
+        public int IsMainSurgery { get; set; } = 0;
+    }
+
+    public class SaveOTBookingResponse
+    {
+        public int OTBookingId { get; set; }
+        public string OTBookingNo { get; set; }
+    }
+
+    // ─── OT Booking actions ────────────────────────────────────────────────────
+
+    public class CancelOTBookingRequest
+    {
+        [Required(ErrorMessage = "OTBookingId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTBookingId must be greater than 0")]
+        public int OTBookingId { get; set; }
+
+        [StringLength(256, ErrorMessage = "CancelReason cannot exceed 256 characters")]
+        public string? CancelReason { get; set; }
+    }
+
+    public class ConfirmOTBookingRequest
+    {
+        [Required(ErrorMessage = "OTBookingId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTBookingId must be greater than 0")]
+        public int OTBookingId { get; set; }
+    }
+
+    public class RescheduleOTBookingRequest
+    {
+        [Required(ErrorMessage = "OTBookingId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTBookingId must be greater than 0")]
+        public int OTBookingId { get; set; }
+
+        [Required(ErrorMessage = "OTId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTId must be greater than 0")]
+        public int OTId { get; set; }
+
+        [Required(ErrorMessage = "OTBookingDate is required")]
+        public string OTBookingDate { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingFromTime is required")]
+        public string OTBookingFromTime { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingToTime is required")]
+        public string OTBookingToTime { get; set; }
+    }
+
+    public class AddBreakInOTBookingRequest
+    {
+        [Required(ErrorMessage = "OTId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "OTId must be greater than 0")]
+        public int OTId { get; set; }
+
+        [Required(ErrorMessage = "OTBookingDate is required")]
+        public string OTBookingDate { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingFromTime is required")]
+        public string OTBookingFromTime { get; set; }
+
+        /// <summary>HH:mm</summary>
+        [Required(ErrorMessage = "OTBookingToTime is required")]
+        public string OTBookingToTime { get; set; }
+
+      
+    }
+
+    public class AddBreakInOTBookingResponse
+    {
+        public int OTBookingId { get; set; }
+    }
+
+    // ─── OT Notes ────────────────────────────────────────────────────────────────
+
+    public class OTNotesHeaderDataRequest
+    {
+        /// <summary>0 = insert new, >0 = existing row Id to delete/replace</summary>
+        public int DataId { get; set; } = 0;
+
+        [Required(ErrorMessage = "PatientId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "PatientId must be greater than 0")]
+        public int PatientId { get; set; }
+
+        [Required(ErrorMessage = "VisitId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "VisitId must be greater than 0")]
+        public int VisitId { get; set; }
+
+        [Required(ErrorMessage = "SectionId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "SectionId must be greater than 0")]
+        public int SectionId { get; set; }
+
+        [Required(ErrorMessage = "HeaderId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "HeaderId must be greater than 0")]
+        public int HeaderId { get; set; }
+
+        [Required(ErrorMessage = "ControlTypeId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "ControlTypeId must be greater than 0")]
+        public int ControlTypeId { get; set; }
+
+        [Required(ErrorMessage = "TemplateId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "TemplateId must be greater than 0")]
+        public int TemplateId { get; set; }
+
+        public string? HeaderValue { get; set; }
+    }
+
+    public class SavePatientOTNotesRequest
+    {
+        [Required(ErrorMessage = "OTNotesHeadersData is required")]
+        [MinLength(1, ErrorMessage = "At least one OT notes row is required")]
+        public List<OTNotesHeaderDataRequest> OTNotesHeadersData { get; set; } = new();
+    }
+
+    public class SavePatientOTNotesResponse
+    {
+        public int PatientId { get; set; }
+        public int VisitId { get; set; }
+        public int SavedCount { get; set; }
+    }
+
 }

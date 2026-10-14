@@ -1580,6 +1580,325 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        // ─── OT Booking ────────────────────────────────────────────────────────────
 
+        [HttpPost("saveOTBooking")]
+        [Authorize]
+        public IActionResult SaveOTBooking([FromBody] SaveOTBookingRequest request)
+        {
+            _log.Info($"SaveOTBooking called. PatientId={request?.PatientId}, OTId={request?.OTId}, BranchId={request?.BranchId}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SaveOTBooking.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            if (request.BookingItems == null || request.BookingItems.Count == 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "At least one booking item is required",
+                    errors = new[] { "BookingItems cannot be empty" }
+                });
+            }
+
+            if (request.SurgeonIds.Any(id => id <= 0))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "All SurgeonIds must be greater than 0",
+                    errors = new { request.SurgeonIds }
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.SaveOTBooking(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"SaveOTBooking succeeded: {serviceResult.Message}");
+            else
+                _log.Warn($"SaveOTBooking failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getOTBookingDetails")]
+        [Authorize]
+        public IActionResult GetOTBookingDetails(
+            [FromQuery] string fromDate,
+            [FromQuery] string toDate,
+            [FromQuery] string? otBookingNo = null,
+            [FromQuery] string? uhid = null,
+            [FromQuery] string? ipdNo = null)
+        {
+            _log.Info($"GetOTBookingDetails called. OTBookingNo={otBookingNo ?? "All"}, FromDate={fromDate}, ToDate={toDate}, UHID={uhid ?? "All"}, IPDNo={ipdNo ?? "All"}");
+
+            if (string.IsNullOrWhiteSpace(fromDate))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "FromDate is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(toDate))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "ToDate is required" });
+            }
+
+            var serviceResult = _ipdRepository.GetOTBookingDetails(otBookingNo, fromDate, toDate, uhid, ipdNo);
+
+            if (serviceResult.Result)
+                _log.Info($"OT booking details fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"OT booking details fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getOTBookingItemDetails")]
+        [Authorize]
+        public IActionResult GetOTBookingItemDetails([FromQuery] int otBookingId)
+        {
+            _log.Info($"GetOTBookingItemDetails called. OTBookingId={otBookingId}");
+
+            if (otBookingId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "OTBookingId must be greater than 0",
+                    errors = new { otBookingId }
+                });
+            }
+
+            var serviceResult = _ipdRepository.GetOTBookingItemDetails(otBookingId);
+
+            if (serviceResult.Result)
+                _log.Info($"OT booking item details fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"OT booking item details fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        // ─── OT Booking actions ────────────────────────────────────────────────────
+
+        [HttpPatch("cancelOTBooking")]
+        [Authorize]
+        public IActionResult CancelOTBooking([FromBody] CancelOTBookingRequest request)
+        {
+            _log.Info($"CancelOTBooking called. OTBookingId={request?.OTBookingId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.CancelOTBooking(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("confirmOTBooking")]
+        [Authorize]
+        public IActionResult ConfirmOTBooking([FromBody] ConfirmOTBookingRequest request)
+        {
+            _log.Info($"ConfirmOTBooking called. OTBookingId={request?.OTBookingId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.ConfirmOTBooking(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("rescheduleOTBooking")]
+        [Authorize]
+        public IActionResult RescheduleOTBooking([FromBody] RescheduleOTBookingRequest request)
+        {
+            _log.Info($"RescheduleOTBooking called. OTBookingId={request?.OTBookingId}, OTId={request?.OTId}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.RescheduleOTBooking(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("addBreakInOTBooking")]
+        [Authorize]
+        public IActionResult AddBreakInOTBooking([FromBody] AddBreakInOTBookingRequest request)
+        {
+            _log.Info($"AddBreakInOTBooking called. OTId={request?.OTId}, Date={request?.OTBookingDate}");
+
+            if (!ModelState.IsValid)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.AddBreakInOTBooking(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("savePatientOTNotes")]
+        [Authorize]
+        public IActionResult SavePatientOTNotes([FromBody] SavePatientOTNotesRequest request)
+        {
+            _log.Info($"SavePatientOTNotes called. Rows={request?.OTNotesHeadersData?.Count ?? 0}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SavePatientOTNotes.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            // All rows in one request must belong to the same patient and visit
+            var firstRow = request.OTNotesHeadersData.First();
+            bool isConsistent = request.OTNotesHeadersData.All(x =>
+                x.PatientId == firstRow.PatientId && x.VisitId == firstRow.VisitId);
+
+            if (!isConsistent)
+            {
+                _log.Warn("Inconsistent PatientId/VisitId in OTNotesHeadersData.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "All OT notes rows must have the same PatientId and VisitId"
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.SavePatientOTNotes(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"SavePatientOTNotes succeeded: {serviceResult.Message}");
+            else
+                _log.Warn($"SavePatientOTNotes failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getPatientOTNotesByVisitId")]
+        [Authorize]
+        public IActionResult GetPatientOTNotesByVisitId([FromQuery] int visitId)
+        {
+            _log.Info($"GetPatientOTNotesByVisitId called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                _log.Warn("Invalid VisitId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "VisitId must be greater than 0",
+                    errors = new { visitId }
+                });
+            }
+
+            var serviceResult = _ipdRepository.GetPatientOTNotesByVisitId(visitId);
+
+            if (serviceResult.Result)
+                _log.Info($"OT notes fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"OT notes fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
     }
 }

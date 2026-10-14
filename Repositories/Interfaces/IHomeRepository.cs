@@ -35,7 +35,9 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<IEnumerable<DoctorMasterModel>> GetDoctorMasterListByBranchId(
             int branchId,
             string departmentId = null,
+            string departmentTypeId = null,
             string specializationId = null,
+            string doctorRoleId = null,
             int? canApproveLabReport = null,
             byte? isDoctorUnit = null);
         ServiceResult<IEnumerable<CategoryTypeModel>> GetCategoryTypeList(string categoryTypeIds);
