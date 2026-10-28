@@ -1014,7 +1014,10 @@ namespace HISWEBAPI.Controllers
     [FromQuery] string patientName = null,
     [FromQuery] int roleId = 0,
     [FromQuery] int corporateId = 0,
-    [FromQuery] int statusId = 0
+    [FromQuery] int statusId = 0,
+    [FromQuery] int sampleTypeId = 0,
+    [FromQuery] int roomTypeId = 0,
+    [FromQuery] string isUrgent = null
             )
         {
             _log.Info($"SearchPatientInvestigationForSampleManagement called. BranchId={branchId}, TypeId={typeId}");
@@ -1047,7 +1050,138 @@ namespace HISWEBAPI.Controllers
 
             var serviceResult = _labRepository.SearchPatientInvestigationForSampleManagement(
                 branchId, typeId, uhid, ipdNo, labNo, fromDate, toDate,
-                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId);
+                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId,sampleTypeId, roomTypeId, isUrgent);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+
+        [HttpGet("searchPatientInvestigationForSampleDepartmentReceiving")]
+        [Authorize]
+        public IActionResult SearchPatientInvestigationForSampleDepartmentReceiving(
+[FromQuery] int branchId,
+[FromQuery] int typeId,
+[FromQuery] string uhid = null,
+[FromQuery] string ipdNo = null,
+[FromQuery] string labNo = null,
+[FromQuery] string fromDate = null,
+[FromQuery] string toDate = null,
+[FromQuery] string barCode = null,
+[FromQuery] int subCategoryId = 0,
+[FromQuery] int subSubCategoryId = 0,
+[FromQuery] int investigationId = 0,
+[FromQuery] string patientName = null,
+[FromQuery] int roleId = 0,
+[FromQuery] int corporateId = 0,
+[FromQuery] int statusId = 0,
+[FromQuery] int sampleTypeId = 0,
+[FromQuery] int roomTypeId = 0,
+[FromQuery] string isUrgent = null
+       )
+        {
+            _log.Info($"SearchPatientInvestigationForSampleDepartmentReceiving called. BranchId={branchId}, TypeId={typeId}");
+
+            if (branchId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "BranchId must be greater than 0" });
+            }
+
+            if (string.IsNullOrWhiteSpace(fromDate))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "FromDate is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(toDate))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "ToDate is required" });
+            }
+
+
+            if (roleId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "RoleId must be greater than 0" });
+            }
+
+
+            var serviceResult = _labRepository.SearchPatientInvestigationForSampleDepartmentReceiving(
+                branchId, typeId, uhid, ipdNo, labNo, fromDate, toDate,
+                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId, sampleTypeId, roomTypeId, isUrgent);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+
+
+        [HttpGet("searchPatientInvestigationForSampleSegregation")]
+        [Authorize]
+        public IActionResult SearchPatientInvestigationForSampleSegregation(
+ [FromQuery] int branchId,
+ [FromQuery] int typeId,
+ [FromQuery] string uhid = null,
+ [FromQuery] string ipdNo = null,
+ [FromQuery] string labNo = null,
+ [FromQuery] string fromDate = null,
+ [FromQuery] string toDate = null,
+ [FromQuery] string barCode = null,
+ [FromQuery] int subCategoryId = 0,
+ [FromQuery] int subSubCategoryId = 0,
+ [FromQuery] int investigationId = 0,
+ [FromQuery] string patientName = null,
+ [FromQuery] int roleId = 0,
+ [FromQuery] int corporateId = 0,
+ [FromQuery] int statusId = 0,
+ [FromQuery] int sampleTypeId = 0,
+ [FromQuery] int roomTypeId = 0,
+ [FromQuery] string isUrgent = null
+         )
+        {
+            _log.Info($"SearchPatientInvestigationForSampleSegregation called. BranchId={branchId}, TypeId={typeId}");
+
+            if (branchId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "BranchId must be greater than 0" });
+            }
+
+            if (string.IsNullOrWhiteSpace(fromDate))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "FromDate is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(toDate))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "ToDate is required" });
+            }
+
+
+            if (roleId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "RoleId must be greater than 0" });
+            }
+
+
+            var serviceResult = _labRepository.SearchPatientInvestigationForSampleSegregation(
+                branchId, typeId, uhid, ipdNo, labNo, fromDate, toDate,
+                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId, sampleTypeId, roomTypeId, isUrgent);
 
             return StatusCode(serviceResult.StatusCode, new
             {
@@ -1215,7 +1349,7 @@ namespace HISWEBAPI.Controllers
 
           
 
-            var validStatusIds = new[] { 1, 3, 6 };
+            var validStatusIds = new[] { 1,2, 3, 6 };
             var invalidStatuses = request.Samples
                 .Where(s => !validStatusIds.Contains(s.StatusId))
                 .Select(s => new { s.PatientInvestigationId, s.StatusId })
@@ -1229,7 +1363,7 @@ namespace HISWEBAPI.Controllers
                 {
                     result = false,
                     messageType = alert.Type,
-                    message = "StatusId must be 1 (Sample Collection), 3 (Dept Receiving), or 6 (Dispatch)",
+                    message = "StatusId must be 1 (Sample Collection), 2 (Sample Segregation), 3 (Dept Receiving), or 6 (Dispatch)",
                     errors = new { invalidStatuses }
                 });
             }
@@ -3358,7 +3492,41 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+       
+        [HttpGet("getSampleJourneyByPatientInvestigationId")]
+        [Authorize]
+        public IActionResult GetSampleJourneyByPatientInvestigationId([FromQuery] int patientInvestigationId)
+        {
+            _log.Info($"GetSampleJourneyByPatientInvestigationId called. PatientInvestigationId={patientInvestigationId}");
 
+            if (patientInvestigationId <= 0)
+            {
+                _log.Warn("Invalid PatientInvestigationId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "PatientInvestigationId must be greater than 0",
+                    errors = new { patientInvestigationId }
+                });
+            }
+
+            var serviceResult = _labRepository.GetSampleJourneyByPatientInvestigationId(patientInvestigationId);
+
+            if (serviceResult.Result)
+                _log.Info($"SampleJourney fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"SampleJourney fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
     }
 }
     

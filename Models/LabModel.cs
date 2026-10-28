@@ -80,6 +80,7 @@
         public string ForGender { get; set; }
         public int IsOutSource { get; set; }
         public int? IsPrintAlone { get; set; }
+        public int? IsSampleSegregationRequired { get; set; }
         public int? IsDepartmentReceivingRequired { get; set; }
         public string ShortName { get; set; }
         public string SampleVolume { get; set; }

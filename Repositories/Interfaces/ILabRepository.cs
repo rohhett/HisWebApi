@@ -34,7 +34,18 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<IEnumerable<Dictionary<string, object>>> SearchPatientInvestigationForSampleManagement(
     int branchId, int typeId, string uhid, string ipdNo, string labNo,
     string fromDate, string toDate, string barCode, int subCategoryId,
-    int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId);
+    int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId,int sampleTypeId,int roomTypeId,string isUrgent);
+
+      
+        ServiceResult<IEnumerable<Dictionary<string, object>>> SearchPatientInvestigationForSampleDepartmentReceiving(
+   int branchId, int typeId, string uhid, string ipdNo, string labNo,
+   string fromDate, string toDate, string barCode, int subCategoryId,
+   int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId, int sampleTypeId, int roomTypeId, string isUrgent);
+
+        ServiceResult<IEnumerable<Dictionary<string, object>>> SearchPatientInvestigationForSampleSegregation(
+ int branchId, int typeId, string uhid, string ipdNo, string labNo,
+ string fromDate, string toDate, string barCode, int subCategoryId,
+ int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId, int sampleTypeId, int roomTypeId, string isUrgent);
 
         ServiceResult<IEnumerable<Dictionary<string, object>>> searchPatientInvestigationForSampleProcessingPathology(
   int branchId, int typeId, string uhid, string ipdNo, string labNo,
@@ -132,6 +143,8 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
 int branchId, int typeId, string uhid, string ipdNo, string labNo,
 string fromDate, string toDate, string barCode, int subCategoryId,
 int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId, int canSampleCollect);
+
+        ServiceResult<object> GetSampleJourneyByPatientInvestigationId(int patientInvestigationId);
 
     }
 }

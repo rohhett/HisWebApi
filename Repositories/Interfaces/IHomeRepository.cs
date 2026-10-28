@@ -7,13 +7,13 @@ namespace HISWEBAPI.Repositories.Interfaces
 {
     public interface IHomeRepository
     {
+        ServiceResult<string> ClearAllCache();
+        ServiceResult<object> GetCompanySettings();
         ServiceResult<MobileAppSettingsResponse> GetMobileAppSettings();
         ServiceResult<IEnumerable<BranchModel>> GetActiveBranchList();
         ServiceResult<IEnumerable<PickListModel>> GetPickListMaster(string fieldName);
         ServiceResult<object> GetPredefineQueryResult(string queryName, string filter1, string filter2, string filter3, string filter4, string filter5);
         ServiceResult<AllGlobalValues> GetAllGlobalValues();
-        ServiceResult<string> ClearAllCache();
-
         ServiceResult<IEnumerable<Dictionary<string, object>>> GetDashBoardStates(int branchId, int userId, int roleId);
         ServiceResult<MobileVerificationOtpResponseData> SendMobileVerificationOtp(SendMobileVerificationOtpRequest request);
         ServiceResult<string> VerifyMobileVerificationOtp(VerifyMobileVerificationOtpRequest request);

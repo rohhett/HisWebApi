@@ -70,6 +70,28 @@ namespace HISWEBAPI.Controllers
 
         }
 
+        [HttpGet("getCompanySettings")]
+        [Authorize]
+        public IActionResult GetCompanySettings()
+        {
+            _log.Info("GetCompanySettings called.");
+
+            var serviceResult = _homeRepository.GetCompanySettings();
+
+            if (serviceResult.Result)
+                _log.Info($"CompanySettings fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"CompanySettings fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpGet("getMobileAppSettings")]
         [AllowAnonymous]
         public IActionResult GetMobileAppSettings()
@@ -1744,6 +1766,7 @@ namespace HISWEBAPI.Controllers
             });
         }
 
-       
+      
+
     }
 }

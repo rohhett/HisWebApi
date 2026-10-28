@@ -115,6 +115,7 @@ namespace HISWEBAPI.DTO
         public string ForGender { get; set; }
         public int IsOutSource { get; set; } = 0;
         public int? IsPrintAlone { get; set; }
+        public int? IsSampleSegregationRequired { get; set; }
         public int? IsDepartmentReceivingRequired { get; set; }
 
         [Required(ErrorMessage = "IsActive is required")]
@@ -304,6 +305,7 @@ namespace HISWEBAPI.DTO
         public int StatusId { get; set; }
 
         public int DefaultSampleTypeId { get; set; } = 0;
+        public int DepartmentId { get; set; } = 0;
 
         [Required(ErrorMessage = "LabNo is required")]
         [Range(1, int.MaxValue, ErrorMessage = "LabNo must be greater than 0")]

@@ -1025,6 +1025,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         @forGender = request.ForGender,
                         @isOutSource = request.IsOutSource,
                         @isPrintAlone = request.IsPrintAlone,
+                        @isSampleSegregationRequired = request.IsSampleSegregationRequired,
                         @isDepartmentReceivingRequired = request.IsDepartmentReceivingRequired,
                         @isActive = request.IsActive,
                         @userId = globalValues.userId,
@@ -1144,6 +1145,7 @@ int? reportTypeId,
                         ForGender = row.Field<string>("ForGender") ?? string.Empty,
                         IsOutSource = row.Field<int>("IsOutSource"),
                         IsPrintAlone = row.Field<int?>("IsPrintAlone"),
+                        IsSampleSegregationRequired = row.Field<int?>("IsSampleSegregationRequired"),
                         IsDepartmentReceivingRequired = row.Field<int?>("IsDepartmentReceivingRequired"),
                         ShortName = row.Field<string>("ShortName") ?? string.Empty,
                         SampleVolume = row.Field<string>("SampleVolume") ?? string.Empty,
@@ -2095,7 +2097,7 @@ int? reportTypeId,
         public ServiceResult<IEnumerable<Dictionary<string, object>>> SearchPatientInvestigationForSampleManagement(
       int branchId, int typeId, string uhid, string ipdNo, string labNo,
       string fromDate, string toDate, string barCode, int subCategoryId,
-      int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId,int statusId)
+      int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId,int statusId, int sampleTypeId, int roomTypeId, string isUrgent)
         {
             try
             {
@@ -2120,7 +2122,10 @@ int? reportTypeId,
                         @patientName = patientName,
                         @roleId = roleId,
                         @corporateId = corporateId,
-                        @statusId= statusId
+                        @statusId= statusId,
+                        @sampleTypeId = sampleTypeId,
+                        @roomTypeId = roomTypeId,
+                        @isUrgent = isUrgent
                     }
                 );
 
@@ -2165,7 +2170,158 @@ int? reportTypeId,
         }
 
 
-        public ServiceResult<IEnumerable<Dictionary<string, object>>> searchPatientInvestigationForSampleProcessingPathology(
+        public ServiceResult<IEnumerable<Dictionary<string, object>>> SearchPatientInvestigationForSampleDepartmentReceiving(
+ int branchId, int typeId, string uhid, string ipdNo, string labNo,
+ string fromDate, string toDate, string barCode, int subCategoryId,
+ int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId, int sampleTypeId, int roomTypeId, string isUrgent)
+        {
+            try
+            {
+                _log.Info($"SearchPatientInvestigationForSampleDepartmentReceiving called. BranchId={branchId}, TypeId={typeId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_searchPatientInvestigationForSampleDepartmentReceiving",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @branchId = branchId,
+                        @typeId = typeId,
+                        @uhid = uhid,
+                        @ipdNo = ipdNo,
+                        @labNo = labNo,
+                        @fromDate = Utility.getDateTime(fromDate).ToString("yyyy-MM-dd"),
+                        @toDate = Utility.getDateTime(toDate).ToString("yyyy-MM-dd"),
+                        @barCode = barCode,
+                        @subCategoryId = subCategoryId,
+                        @subSubCategoryId = subSubCategoryId,
+                        @investigationId = investigationId,
+                        @patientName = patientName,
+                        @roleId = roleId,
+                        @corporateId = corporateId,
+                        @statusId = statusId,
+                        @sampleTypeId = sampleTypeId,
+                        @roomTypeId = roomTypeId,
+                        @isUrgent = isUrgent
+                    }
+                );
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info("No patient investigation records found.");
+                    return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                        alert.Type,
+                        alert.Message,
+                        404
+                    );
+                }
+
+                // Convert DataTable rows to raw Dictionary list — no model mapping
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"SearchPatientInvestigationForSampleDepartmentReceiving returned {result.Count} record(s).");
+
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Success(
+                    result,
+                    "Info",
+                    $"{result.Count} record(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
+        public ServiceResult<IEnumerable<Dictionary<string, object>>> SearchPatientInvestigationForSampleSegregation(
+   int branchId, int typeId, string uhid, string ipdNo, string labNo,
+   string fromDate, string toDate, string barCode, int subCategoryId,
+   int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId, int sampleTypeId, int roomTypeId, string isUrgent)
+        {
+            try
+            {
+                _log.Info($"SearchPatientInvestigationForSampleSegregation called. BranchId={branchId}, TypeId={typeId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_searchPatientInvestigationForSampleSegregation",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @branchId = branchId,
+                        @typeId = typeId,
+                        @uhid = uhid,
+                        @ipdNo = ipdNo,
+                        @labNo = labNo,
+                        @fromDate = Utility.getDateTime(fromDate).ToString("yyyy-MM-dd"),
+                        @toDate = Utility.getDateTime(toDate).ToString("yyyy-MM-dd"),
+                        @barCode = barCode,
+                        @subCategoryId = subCategoryId,
+                        @subSubCategoryId = subSubCategoryId,
+                        @investigationId = investigationId,
+                        @patientName = patientName,
+                        @roleId = roleId,
+                        @corporateId = corporateId,
+                        @statusId = statusId,
+                        @sampleTypeId = sampleTypeId,
+                        @roomTypeId = roomTypeId,
+                        @isUrgent = isUrgent
+                    }
+                );
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info("No patient investigation records found.");
+                    return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                        alert.Type,
+                        alert.Message,
+                        404
+                    );
+                }
+
+                // Convert DataTable rows to raw Dictionary list — no model mapping
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"SearchPatientInvestigationForSampleSegregation returned {result.Count} record(s).");
+
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Success(
+                    result,
+                    "Info",
+                    $"{result.Count} record(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
+                    alert.Type,
+                    alert.Message,
+                    500
+                );
+            }
+        }
+
+
+            public ServiceResult<IEnumerable<Dictionary<string, object>>> searchPatientInvestigationForSampleProcessingPathology(
   int branchId, int typeId, string uhid, string ipdNo, string labNo,
   string fromDate, string toDate, string barCode, int subCategoryId,
   int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId,int canSampleCollect)
@@ -2350,13 +2506,14 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
 
                     _sqlHelper.DML(tnx, "U_UpdateSampleStatus", CommandType.StoredProcedure, new
                     {
-                        patientInvestigationId = r.PatientInvestigationId,
-                        barCode = r.BarCode,
-                        statusId = r.StatusId,
-                        defaultSampleTypeId = r.DefaultSampleTypeId,
+                        @patientInvestigationId = r.PatientInvestigationId,
+                        @barCode = r.BarCode,
+                        @statusId = r.StatusId,
+                        @defaultSampleTypeId = r.DefaultSampleTypeId,
+                        @departmentId = r.DepartmentId,
                         @sampleDateTime = Utility.getDateTime(r.sampleDateTime).ToString("yyyy-MM-dd HH:mm:ss"),
-                        userId = globalValues.userId,
-                        ipAddress = globalValues.ipAddress
+                        @userId = globalValues.userId,
+                        @ipAddress = globalValues.ipAddress
                     });
 
                     _log.Info($"Sample status updated. PatientInvestigationId={r.PatientInvestigationId}, BarCode={r.BarCode}, StatusId={r.StatusId}");
@@ -5454,7 +5611,50 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
                 );
             }
         }
+       
+        public ServiceResult<object> GetSampleJourneyByPatientInvestigationId(int patientInvestigationId)
+        {
+            try
+            {
+                _log.Info($"GetSampleJourneyByPatientInvestigationId called. PatientInvestigationId={patientInvestigationId}");
 
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetSampleJourneyByPatientInvestigationId",
+                    CommandType.StoredProcedure,
+                    new { @PatientInvestigationId = patientInvestigationId }
+                );
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No sample journey found for PatientInvestigationId={patientInvestigationId}");
+                    return ServiceResult<object>.Failure(alert.Type, "No sample journey found", 404);
+                }
+
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetSampleJourneyByPatientInvestigationId retrieved {result.Count} record(s)");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    result,
+                    alert1.Type,
+                    "Sample journey retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
 
     }
 }

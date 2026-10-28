@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace HISWEBAPI.Repositories.Implementations
@@ -113,6 +114,81 @@ namespace HISWEBAPI.Repositories.Implementations
                 );
             }
         }
+
+        private const string CACHE_KEY_CompanySettings_All = "_CompanySettings_All";
+
+        public ServiceResult<object> GetCompanySettings()
+        {
+            try
+            {
+                _log.Info("GetCompanySettings called.");
+
+                List<Dictionary<string, object>> result;
+
+                var cachedData = _distributedCache.GetString(CACHE_KEY_CompanySettings_All);
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    _log.Info($"CompanySettings retrieved from cache. Key={CACHE_KEY_CompanySettings_All}");
+                    result = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData)
+                             ?? new List<Dictionary<string, object>>();
+                }
+                else
+                {
+                    _log.Info($"CompanySettings cache miss. Fetching from database. Key={CACHE_KEY_CompanySettings_All}");
+
+                    var dataTable = _sqlHelper.GetDataTable(
+                        "S_GetCompanySettings",
+                        CommandType.StoredProcedure
+                    );
+
+                    // Raw DataTable -> List<Dictionary<string,object>> (no model mapping)
+                    result = dataTable?.AsEnumerable().Select(row =>
+                        dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                            col => col.ColumnName,
+                            col => row[col] == DBNull.Value ? null : row[col]
+                        )
+                    ).ToList() ?? new List<Dictionary<string, object>>();
+
+                    // Cache permanently (cleared when settings are updated)
+                    if (result.Any())
+                    {
+                        var serialized = JsonSerializer.Serialize(result);
+                        var cacheOptions = new DistributedCacheEntryOptions
+                        {
+                            AbsoluteExpiration = null,
+                            SlidingExpiration = null
+                        };
+                        _distributedCache.SetString(CACHE_KEY_CompanySettings_All, serialized, cacheOptions);
+                        _log.Info($"CompanySettings cached permanently. Key={CACHE_KEY_CompanySettings_All}, Count={result.Count}");
+                    }
+                }
+
+                if (!result.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info("No company settings found.");
+                    return ServiceResult<object>.Failure(alert.Type, "No company settings found", 404);
+                }
+
+                _log.Info($"GetCompanySettings returning {result.Count} record(s)");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    result,
+                    alert1.Type,
+                    $"{result.Count} record(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
         public ServiceResult<MobileAppSettingsResponse> GetMobileAppSettings()
         {
             try
@@ -3616,6 +3692,6 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
-      
+       
     }
 }
