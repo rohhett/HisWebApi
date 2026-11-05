@@ -25,17 +25,15 @@ namespace HISWEBAPI.Controllers
     {
         private readonly IHomeRepository _homeRepository;
         private readonly IResponseMessageService _messageService;
-        private readonly IPatientInvestigationReportPdfService _patientInvestigationReportPdfService;
         private static readonly ILog _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
         public HomeController(
             IHomeRepository repository,
-        IResponseMessageService messageService,
-        IPatientInvestigationReportPdfService patientInvestigationReportPdfService)
+        IResponseMessageService messageService
+        )
         {
             _homeRepository = repository;
             _messageService = messageService;
-            _patientInvestigationReportPdfService = patientInvestigationReportPdfService;
 
         }
 
@@ -1430,27 +1428,7 @@ namespace HISWEBAPI.Controllers
         }
 
 
-        [HttpGet("printPatientInvestigationReport")]
-        [AllowAnonymous]
-        public IActionResult printPatientInvestigationReport([FromQuery] PatientInvestigationReportRequest request)
-        {
-            _log.Info($"printPatientInvestigationReport called. PatientInvestigationIds={request?.PatientInvestigationIds}");
-
-            if (string.IsNullOrWhiteSpace(request?.PatientInvestigationIds))
-            {
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new { result = false, messageType = alert.Type, message = "PatientInvestigationIds is required" });
-            }
-
-            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
-
-
-            var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
-            var pdfResult = _patientInvestigationReportPdfService.GenerateReport(request, globalValues, baseUrl);
-
-            Response.Headers["Content-Disposition"] = $"{(request.Download ? "attachment" : "inline")}; filename=\"{pdfResult.FileName}\"";
-            return File(pdfResult.Content, "application/pdf");
-        }
+       
 
         [HttpGet("checkBedStatus")]
         [Authorize]

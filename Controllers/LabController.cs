@@ -3527,6 +3527,56 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+
+        [HttpGet("getPatientTabularResultEntryHistory")]
+        [Authorize]
+        public IActionResult GetPatientTabularResultEntryHistory(
+    [FromQuery] int patientId,
+    [FromQuery] int investigationId)
+        {
+            _log.Info($"GetPatientTabularResultEntryHistory called. PatientId={patientId}, InvestigationId={investigationId}");
+
+            if (patientId <= 0)
+            {
+                _log.Warn("Invalid PatientId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "PatientId must be greater than 0",
+                    errors = new { patientId }
+                });
+            }
+
+            if (investigationId <= 0)
+            {
+                _log.Warn("Invalid InvestigationId provided.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "InvestigationId must be greater than 0",
+                    errors = new { investigationId }
+                });
+            }
+
+            var serviceResult = _labRepository.GetPatientTabularResultEntryHistory(patientId, investigationId);
+
+            if (serviceResult.Result)
+                _log.Info($"Tabular result entry history fetched successfully: {serviceResult.Message}");
+            else
+                _log.Warn($"Tabular result entry history fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
     }
 }
     

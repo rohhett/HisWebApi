@@ -146,5 +146,6 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
 
         ServiceResult<object> GetSampleJourneyByPatientInvestigationId(int patientInvestigationId);
 
+        ServiceResult<object> GetPatientTabularResultEntryHistory(int patientId, int investigationId);
     }
 }

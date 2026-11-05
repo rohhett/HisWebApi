@@ -22,18 +22,27 @@ using PdfPage = HiQPdf.PdfPage;
 using PdfRectangle = HiQPdf.PdfRectangle;
 namespace HISWEBAPI.Services.Implementations
 {
+
+
     public class PatientInvestigationReportPdfService : IPatientInvestigationReportPdfService
     {
+
         private const string HiQPdfSerialCode = "g8vq0tPn‐5c/q4fHi‐8fq7rbOj‐sqO3o7uy‐t6Owsq2y‐sa26urq6";
-        private readonly IPatientLabReport _patientLabReport;
         private PatientInvestigationReportRequest _request = new();
         private AllGlobalValues _globalValues = new();
         private string _baseUrl = string.Empty;
 
-        public PatientInvestigationReportPdfService(IPatientLabReport patientLabReport)
+        private readonly ILabReportRepository _printSettingRepository;   // NEW
+        private readonly IPatientLabReport _patientLabReport;
+
+        public PatientInvestigationReportPdfService(
+            IPatientLabReport patientLabReport,
+            ILabReportRepository printSettingRepository)                 // NEW
         {
             _patientLabReport = patientLabReport;
+            _printSettingRepository = printSettingRepository;
         }
+
 
         PdfLayoutInfo html1LayoutInfo;
         PdfDocument document = new PdfDocument();
@@ -120,6 +129,69 @@ namespace HISWEBAPI.Services.Implementations
         DataRow drPrevious = null;
         DataTable dtPatientInvestigations = new DataTable();
 
+        /// <summary>Loads print settings (branch value -> default row) from DB and applies them.</summary>
+        private void ApplyPrintSettings(int branch)
+        {
+            var s = _printSettingRepository.GetEffectiveSetting(branch);
+            if (s.Count == 0) return;                       // keep hard-coded fallbacks
+
+            int I(string key, int current) => s.TryGetValue(key, out var v) && v.HasValue ? v.Value : current;
+            bool B(string key, bool current) => s.TryGetValue(key, out var v) && v.HasValue ? v.Value == 1 : current;
+
+            // page / body
+            MarginLeft = I("MarginLeft", MarginLeft);
+            PageWidth = I("PageWidth", PageWidth);
+            BrowserWidth = I("BrowserWidth", BrowserWidth);
+
+            // header
+            HeaderHeight = I("HeaderHeight", HeaderHeight);
+            XHeader = I("XHeader", XHeader);
+            YHeader = I("YHeader", YHeader);
+            HeaderBrowserWidth = I("HeaderBrowserWidth", HeaderBrowserWidth);
+            TopLine = B("TopLine", TopLine);
+            BottomLine = B("BottomLine", BottomLine);
+
+            // footer
+            FooterHeight = I("FooterHeight", FooterHeight);
+            XFooter = I("XFooter", XFooter);
+            YFooter = I("YFooter", YFooter);
+            FooterBrowserWidth = I("FooterBrowserWidth", FooterBrowserWidth);
+            footerTopLine = B("FooterTopLine", footerTopLine);
+
+            // signature
+            showDigitalSinature = B("ShowDigitalSignature", showDigitalSinature);
+            XSignature = I("XSignature", XSignature);
+            YSignature = I("YSignature", YSignature);
+
+            // barcode
+            Barcode = B("IsActiveBarcode", Barcode);
+            XBarcode = I("XBarcode", XBarcode);
+            YBarcode = I("YBarcode", YBarcode);
+            BarCodeHeight = I("BarcodeHeight", BarCodeHeight);
+            BarCodeWidth = I("BarcodeWidth", BarCodeWidth);
+            BarcodePosition = I("BarcodePosition", BarcodePosition);
+            RotateBarcode90Degree = I("RotateBarcode90Degree", RotateBarcode90Degree);
+
+            // QR
+            QRCode = B("IsActiveQRCode", QRCode);
+            XQRcode = I("XQRCode", XQRcode);
+            YQRcode = I("YQRCode", YQRcode);
+            QRHeight = I("QRHeight", QRHeight);
+            QRWidth = I("QRWidth", QRWidth);
+            QRCodePosition = I("QRCodePosition", QRCodePosition);
+
+            // footer texts
+            PrintDateTime = I("PrintDateTime", PrintDateTime);
+            PreparedBy = I("PreparedBy", PreparedBy);
+            PrintedBy = I("PrintedBy", PrintedBy);
+            PageNumbering = I("PageNumbering", PageNumbering);
+
+            // behaviour
+            hideInvtNameforSingleTest = B("HideTestNameForSingleTest", hideInvtNameforSingleTest);
+            isPrintDepartmentSeperate = B("PrintDepartmentSeparate", isPrintDepartmentSeperate);
+            isSendEmail = B("SendEmail", isSendEmail);
+            isSendWhtsAppMessage = B("SendWhatsAppMessage", isSendWhtsAppMessage);
+        }
         public PatientInvestigationReportPdfResult GenerateReport(PatientInvestigationReportRequest request, AllGlobalValues globalValues, string baseUrl)
         {
             _request = request;
@@ -253,32 +325,33 @@ namespace HISWEBAPI.Services.Implementations
 
                 foreach (DataRow dr in dtPatientInvestigations.Rows)
                 {
-                    XSignature = int.TryParse(dr["XSign"]?.ToString(), out var FRA) ? FRA : 450;
-                    YSignature = int.TryParse(dr["YSign"]?.ToString(), out var FRB) ? FRB : 10;
-                    HeaderHeight = int.TryParse(dr["HeaderHeight"]?.ToString(), out var FRC) ? FRC : 210;
-                    defaultNABLLogoPath = dr["NABLPath"].ToString();
-                    PrintDateTime = int.TryParse(dr["PrintDateTime"]?.ToString(), out var FRE) ? FRE : 1;
-                    PreparedBy = int.TryParse(dr["PreparedBy"]?.ToString(), out var FRF) ? FRF : 1;
-                    PrintedBy = int.TryParse(dr["PrintedBy"]?.ToString(), out var FRG) ? FRG : 1;
-                    PageNumbering = int.TryParse(dr["PageNumbering"]?.ToString(), out var FRH) ? FRH : 1;
-                    showDigitalSinature = int.TryParse(dr["DoctorSignature"]?.ToString(), out var FRI) && FRI == 1;
-                    hideInvtNameforSingleTest = int.TryParse(dr["TestNameforSingleTest"]?.ToString(), out var FRJ) && FRJ == 1;
-                    isPrintDepartmentSeperate = int.TryParse(dr["PrintDepartmentSeperate"]?.ToString(), out var FRK) && FRK == 1;
-                    isSendEmail = int.TryParse(dr["SendEmail"]?.ToString(), out var FRL) && FRL == 1;
-                    isSendWhtsAppMessage = int.TryParse(dr["SendWhatsAppMessage"]?.ToString(), out var FRM) && FRM == 1;
-                    XQRcode = int.TryParse(dr["XQRCode"]?.ToString(), out var FRN) ? FRN : 510;
-                    YQRcode = int.TryParse(dr["YQRCode"]?.ToString(), out var FRO) ? FRO : 40;
-                    QRHeight = int.TryParse(dr["QRHeight"]?.ToString(), out var FRP) ? FRP : 80;
-                    QRWidth = int.TryParse(dr["QRWidth"]?.ToString(), out var FRQ) ? FRQ : 80;
-                    QRCodePosition = int.TryParse(dr["QRCodePosition"]?.ToString(), out var FRR) ? FRR : 1;
-                    QRCode = int.TryParse(dr["IsActiveQRCode"]?.ToString(), out var FRS) && FRS == 1;
-                    XBarcode = int.TryParse(dr["XBarcode"]?.ToString(), out var FRT) ? FRT : 160;
-                    YBarcode = int.TryParse(dr["YBarcode"]?.ToString(), out var FRU) ? FRU : 120;
-                    BarCodeHeight = int.TryParse(dr["BarcodeHeight"]?.ToString(), out var FRV) ? FRV : 15;
-                    BarCodeWidth = int.TryParse(dr["BarcodeWidth"]?.ToString(), out var FRW) ? FRW : 200;
-                    BarcodePosition = int.TryParse(dr["BarcodePosition"]?.ToString(), out var FRX) ? FRX : 1;
-                    Barcode = int.TryParse(dr["IsActiveBarcode"]?.ToString(), out var FRY) && FRY == 1;
-                    RotateBarcode90Degree = int.TryParse(dr["RotateBarcode90Degree"]?.ToString(), out var FRZ) ? FRZ : 1;
+                    ApplyPrintSettings(1);
+                    //XSignature = int.TryParse(dr["XSign"]?.ToString(), out var FRA) ? FRA : 450;
+                    //YSignature = int.TryParse(dr["YSign"]?.ToString(), out var FRB) ? FRB : 10;
+                    //HeaderHeight = int.TryParse(dr["HeaderHeight"]?.ToString(), out var FRC) ? FRC : 210;
+                    //defaultNABLLogoPath = dr["NABLPath"].ToString();
+                    //PrintDateTime = int.TryParse(dr["PrintDateTime"]?.ToString(), out var FRE) ? FRE : 1;
+                    //PreparedBy = int.TryParse(dr["PreparedBy"]?.ToString(), out var FRF) ? FRF : 1;
+                    //PrintedBy = int.TryParse(dr["PrintedBy"]?.ToString(), out var FRG) ? FRG : 1;
+                    //PageNumbering = int.TryParse(dr["PageNumbering"]?.ToString(), out var FRH) ? FRH : 1;
+                    //showDigitalSinature = int.TryParse(dr["DoctorSignature"]?.ToString(), out var FRI) && FRI == 1;
+                    //hideInvtNameforSingleTest = int.TryParse(dr["TestNameforSingleTest"]?.ToString(), out var FRJ) && FRJ == 1;
+                    //isPrintDepartmentSeperate = int.TryParse(dr["PrintDepartmentSeperate"]?.ToString(), out var FRK) && FRK == 1;
+                    //isSendEmail = int.TryParse(dr["SendEmail"]?.ToString(), out var FRL) && FRL == 1;
+                    //isSendWhtsAppMessage = int.TryParse(dr["SendWhatsAppMessage"]?.ToString(), out var FRM) && FRM == 1;
+                    //XQRcode = int.TryParse(dr["XQRCode"]?.ToString(), out var FRN) ? FRN : 510;
+                    //YQRcode = int.TryParse(dr["YQRCode"]?.ToString(), out var FRO) ? FRO : 40;
+                    //QRHeight = int.TryParse(dr["QRHeight"]?.ToString(), out var FRP) ? FRP : 80;
+                    //QRWidth = int.TryParse(dr["QRWidth"]?.ToString(), out var FRQ) ? FRQ : 80;
+                    //QRCodePosition = int.TryParse(dr["QRCodePosition"]?.ToString(), out var FRR) ? FRR : 1;
+                    //QRCode = int.TryParse(dr["IsActiveQRCode"]?.ToString(), out var FRS) && FRS == 1;
+                    //XBarcode = int.TryParse(dr["XBarcode"]?.ToString(), out var FRT) ? FRT : 160;
+                    //YBarcode = int.TryParse(dr["YBarcode"]?.ToString(), out var FRU) ? FRU : 120;
+                    //BarCodeHeight = int.TryParse(dr["BarcodeHeight"]?.ToString(), out var FRV) ? FRV : 15;
+                    //BarCodeWidth = int.TryParse(dr["BarcodeWidth"]?.ToString(), out var FRW) ? FRW : 200;
+                    //BarcodePosition = int.TryParse(dr["BarcodePosition"]?.ToString(), out var FRX) ? FRX : 1;
+                    //Barcode = int.TryParse(dr["IsActiveBarcode"]?.ToString(), out var FRY) && FRY == 1;
+                    //RotateBarcode90Degree = int.TryParse(dr["RotateBarcode90Degree"]?.ToString(), out var FRZ) ? FRZ : 1;
 
 
                     string investigationPdfPath = Utility.getString(dr["InvestigationDocumentFile"]);

@@ -5656,5 +5656,58 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
             }
         }
 
+
+        public ServiceResult<object> GetPatientTabularResultEntryHistory(int patientId, int investigationId)
+        {
+            try
+            {
+                _log.Info($"GetPatientTabularResultEntryHistory called. PatientId={patientId}, InvestigationId={investigationId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_getPatientTabularResultEntryHistory",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        @patientId = patientId,
+                        @investigationId = investigationId
+                    }
+                );
+
+                if (dataTable == null || dataTable.Rows.Count == 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    _log.Info($"No result entry history found for PatientId={patientId}, InvestigationId={investigationId}");
+                    return ServiceResult<object>.Failure(
+                        alert.Type,
+                        "No result entry history found for the given patient and investigation",
+                        404
+                    );
+                }
+
+                // Raw SP output, no model mapping - new SP columns surface automatically
+                var result = dataTable.AsEnumerable().Select(row =>
+                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                        col => col.ColumnName,
+                        col => row[col] == DBNull.Value ? null : row[col]
+                    )
+                ).ToList();
+
+                _log.Info($"GetPatientTabularResultEntryHistory retrieved {result.Count} record(s)");
+
+                var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    result,
+                    alert1.Type,
+                    $"{result.Count} record(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
     }
 }
