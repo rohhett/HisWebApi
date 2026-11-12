@@ -3577,6 +3577,151 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+
+        [HttpPost("savePatientInvestigationTechnicalNote")]
+        [Authorize]
+        public IActionResult SavePatientInvestigationTechnicalNote([FromBody] SavePatientInvestigationTechnicalNoteRequest request)
+        {
+            _log.Info($"SavePatientInvestigationTechnicalNote called. Id={request?.Id}, InvestigationId={request?.InvestigationId}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for SavePatientInvestigationTechnicalNote.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _labRepository.SavePatientInvestigationTechnicalNote(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getPatientInvestigationTechnicalNote")]
+        [Authorize]
+        public IActionResult GetPatientInvestigationTechnicalNote([FromQuery] int investigationId)
+        {
+            _log.Info($"GetPatientInvestigationTechnicalNote called. InvestigationId={investigationId}");
+
+            if (investigationId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "InvestigationId must be greater than 0",
+                    errors = new { investigationId }
+                });
+            }
+
+            var serviceResult = _labRepository.GetPatientInvestigationTechnicalNote(investigationId);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("deletePatientInvestigationTechnicalNote")]
+        [Authorize]
+        public IActionResult DeletePatientInvestigationTechnicalNote([FromQuery] int id)
+        {
+            _log.Info($"DeletePatientInvestigationTechnicalNote called. Id={id}");
+
+            if (id <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "Id must be greater than 0",
+                    errors = new { id }
+                });
+            }
+
+            var serviceResult = _labRepository.DeletePatientInvestigationTechnicalNote(id);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("createUpdateInvestigationResultEntryComment")]
+        [Authorize]
+        public IActionResult CreateUpdateInvestigationResultEntryComment([FromBody] CreateUpdateInvestigationResultEntryCommentRequest request)
+        {
+            _log.Info($"CreateUpdateInvestigationResultEntryComment called. Id={request?.Id}, InvestigationId={request?.InvestigationId}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for CreateUpdateInvestigationResultEntryComment.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _labRepository.CreateUpdateInvestigationResultEntryComment(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getInvestigationResultEntryCommentMaster")]
+        [Authorize]
+        public IActionResult GetInvestigationResultEntryCommentMaster(
+            [FromQuery] int? investigationId = null,
+            [FromQuery] int? isActive = null)
+        {
+            _log.Info($"GetInvestigationResultEntryCommentMaster called. InvestigationId={investigationId?.ToString() ?? "All"}, IsActive={isActive?.ToString() ?? "All"}");
+
+            if (investigationId.HasValue && investigationId.Value <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "InvestigationId must be greater than 0", errors = new { investigationId } });
+            }
+
+            if (isActive.HasValue && isActive.Value != 0 && isActive.Value != 1)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "IsActive must be 0 (Inactive), 1 (Active), or null (All)", errors = new { isActive } });
+            }
+
+            var serviceResult = _labRepository.GetInvestigationResultEntryCommentMaster(investigationId, isActive);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
     }
 }
     

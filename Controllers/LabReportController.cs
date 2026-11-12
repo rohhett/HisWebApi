@@ -1,5 +1,6 @@
 ﻿using HISWEBAPI.Configuration;
 using HISWEBAPI.DTO;
+using HISWEBAPI.Repositories.Implementations;
 using HISWEBAPI.Repositories.Interfaces;
 using HISWEBAPI.Services;
 using HISWEBAPI.Services.Implementations;
@@ -48,6 +49,50 @@ namespace HISWEBAPI.Controllers
             var pdfResult = _patientInvestigationReportPdfService.GenerateReport(request, globalValues, baseUrl);
 
             Response.Headers["Content-Disposition"] = $"{(request.Download ? "attachment" : "inline")}; filename=\"{pdfResult.FileName}\"";
+            return File(pdfResult.Content, "application/pdf");
+        }
+
+        /// <summary>
+        /// Print-setting preview: renders the normal lab report (same layout / code) with DUMMY data
+        /// from the LabReportDummy* tables (7 tabular + 3 free-text tests, 10 pages).
+        /// Use it to check changes made in LabReportPrintSettingMaster for a branch.
+        /// Header/footer, letter head and signature come from the branch's real setup.
+        /// No patient data is involved.
+        /// </summary>
+        /// <param name="branchId">branch whose print setting / header / letter head is used</param>
+        /// <param name="isHeaderPng">1 = print the letter head image</param>
+        /// <param name="investigationIds">optional comma separated dummy ids (1-10); empty = all 10</param>
+        /// <param name="download">true = attachment, false = open inline</param>
+        [HttpGet("printSettingPreviewReport")]
+        [AllowAnonymous]
+        public IActionResult PrintSettingPreviewReport(
+            [FromQuery] int branchId,
+            [FromQuery] int isHeaderPng = 0,
+            [FromQuery] string? investigationIds = null,
+            [FromQuery] bool download = false)
+        {
+            _log.Info($"PrintSettingPreviewReport called. BranchId={branchId}, IsHeaderPng={isHeaderPng}, Ids={investigationIds}");
+
+            if (branchId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "branchId must be greater than 0" });
+            }
+
+            var request = new PatientInvestigationReportRequest
+            {
+                PatientInvestigationIds = string.IsNullOrWhiteSpace(investigationIds) ? "0" : investigationIds.Trim(),
+                BranchId = branchId,
+                IsHeaderPng = isHeaderPng,
+                Download = download,
+                DummyMode = PatientLabReport.PrintSettingPreviewMode
+            };
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
+            var pdfResult = _patientInvestigationReportPdfService.GenerateReport(request, globalValues, baseUrl);
+
+            Response.Headers["Content-Disposition"] = $"{(download ? "attachment" : "inline")}; filename=\"PrintSettingPreview_Branch{branchId}.pdf\"";
             return File(pdfResult.Content, "application/pdf");
         }
 

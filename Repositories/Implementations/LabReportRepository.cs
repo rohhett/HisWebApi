@@ -153,23 +153,29 @@ namespace HISWEBAPI.Repositories.Implementations
         }
 
         // ── internal use by PDF service ──────────────────────────────────────────────────
-        public Dictionary<string, int?> GetEffectiveSetting(int branchId)
+        // Returns every column as string (null = not set) so ints, flags, colours and fonts can all be read.
+        // refreshCache = true -> drop the cached row first so direct table edits are picked up (print-setting preview)
+        public Dictionary<string, string> GetEffectiveSetting(int branchId, bool refreshCache = false)
         {
-            var result = new Dictionary<string, int?>(StringComparer.OrdinalIgnoreCase);
+            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             try
             {
+                if (refreshCache)
+                    _distributedCache.Remove($"{CACHE_PREFIX}{branchId}_1");
+
                 var row = LoadRow($"{CACHE_PREFIX}{branchId}_1", "S_GetLabReportPrintSetting",
                     new { @BranchId = branchId, @ApplyDefaults = true });
                 if (row == null) return result;
 
                 foreach (var kv in row)
                 {
-                    int? value = null;
+                    string value = null;
                     if (kv.Value is JsonElement je)
                     {
-                        if (je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out int n)) value = n;
+                        if (je.ValueKind == JsonValueKind.String) value = je.GetString();
+                        else if (je.ValueKind != JsonValueKind.Null && je.ValueKind != JsonValueKind.Undefined) value = je.GetRawText();
                     }
-                    else if (kv.Value != null && int.TryParse(kv.Value.ToString(), out int m)) value = m;
+                    else if (kv.Value != null) value = kv.Value.ToString();
                     result[kv.Key] = value;
                 }
             }

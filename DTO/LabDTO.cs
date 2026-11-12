@@ -416,6 +416,8 @@ namespace HISWEBAPI.DTO
         public int InvestigationId { get; set; }
 
         public string? InvestigationComments { get; set; }
+        public int? InvestigationCommentId { get; set; }
+        public string? InterpretationValue { get; set; }
 
         [Required(ErrorMessage = "IsAbnormalResult is required")]
         [Range(0, 1, ErrorMessage = "IsAbnormalResult must be 0 or 1")]
@@ -774,6 +776,47 @@ namespace HISWEBAPI.DTO
         [MinLength(1, ErrorMessage = "At least one mapping entry is required")]
         public List<MicroMappingItemRequest> MicroMappings { get; set; } = new();
     }
+    public class SavePatientInvestigationTechnicalNoteRequest
+    {
+        // 0 = insert, >0 = update
+        [Range(0, int.MaxValue, ErrorMessage = "Id must be 0 or greater")]
+        public int Id { get; set; } = 0;
 
+        [Required(ErrorMessage = "InvestigationId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "InvestigationId must be greater than 0")]
+        public int InvestigationId { get; set; }
+
+        [Required(ErrorMessage = "TechnicalNote is required")]
+        public string TechnicalNote { get; set; }
+    }
+
+    public class SavePatientInvestigationTechnicalNoteResponse
+    {
+        public int Id { get; set; }
+    }
+
+    public class CreateUpdateInvestigationResultEntryCommentRequest
+    {
+        public int Id { get; set; } = 0;
+
+        [Required(ErrorMessage = "InvestigationId is required")]
+        [Range(1, int.MaxValue, ErrorMessage = "InvestigationId must be greater than 0")]
+        public int InvestigationId { get; set; }
+
+        [Required(ErrorMessage = "CommentName is required")]
+        [StringLength(200, ErrorMessage = "CommentName cannot exceed 200 characters")]
+        public string CommentName { get; set; }
+
+        [Required(ErrorMessage = "CommentValue is required")]
+        public string CommentValue { get; set; }
+
+        [Required(ErrorMessage = "IsActive is required")]
+        public int IsActive { get; set; }
+    }
+
+    public class CreateUpdateInvestigationResultEntryCommentResponse
+    {
+        public int Id { get; set; }
+    }
 
 }

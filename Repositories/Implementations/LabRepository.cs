@@ -3352,11 +3352,13 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
                     con.Open();
                     tnx = CustomSqlHelper.getSqlTransaction(con);
 
-                    // Step 1: Update investigation details (mark result done, save comment, abnormal flag)
-                    _sqlHelper.DML(tnx, "U_PatientInvestigationDetailsForLabResults", CommandType.StoredProcedure, new
+                // Step 1: Update investigation details (mark result done, save comment, abnormal flag)
+                _sqlHelper.DML(tnx, "U_PatientInvestigationDetailsForLabResults", CommandType.StoredProcedure, new
                 {
                     @patientInvestigationId = request.PatientInvestigationId,
                     @investigationComments = request.InvestigationComments ?? (object)DBNull.Value,
+                    @InterpretationValue = request.InterpretationValue ?? (object)DBNull.Value,
+                    @InvestigationCommentId = request.InvestigationCommentId ?? (object)DBNull.Value,
                     @isAbnormalResults = request.IsAbnormalResult,
                     @userId = globalValues.userId,
                     @ipAddress = globalValues.ipAddress
@@ -5701,6 +5703,249 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
                     $"{result.Count} record(s) retrieved successfully",
                     200
                 );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<SavePatientInvestigationTechnicalNoteResponse> SavePatientInvestigationTechnicalNote(
+    SavePatientInvestigationTechnicalNoteRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"SavePatientInvestigationTechnicalNote called. Id={request.Id}, InvestigationId={request.InvestigationId}");
+
+                // IU_ proc uses a true OUTPUT param (no trailing SELECT) -> RunProcedureInsert
+                long result = _sqlHelper.RunProcedureInsert(
+                    "IU_PatientInvestigationTechnicalNoteDetails",
+                    new IDataParameter[]
+                    {
+                new SqlParameter("@Id", request.Id),
+                new SqlParameter("@InvestigationId", request.InvestigationId),
+                new SqlParameter("@TechnicalNote", SqlDbType.NVarChar, -1) { Value = request.TechnicalNote },
+                new SqlParameter("@UserId", globalValues.userId),
+                new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                if (result > 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.Id == 0 ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY");
+
+                    _log.Info($"Technical note {(request.Id == 0 ? "created" : "updated")}. Id={result}");
+
+                    return ServiceResult<SavePatientInvestigationTechnicalNoteResponse>.Success(
+                        new SavePatientInvestigationTechnicalNoteResponse { Id = (int)result },
+                        alert.Type,
+                        alert.Message,
+                        request.Id == 0 ? 201 : 200);
+                }
+
+                var failAlert = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                _log.Error($"SavePatientInvestigationTechnicalNote failed. Result={result}");
+                return ServiceResult<SavePatientInvestigationTechnicalNoteResponse>.Failure(
+                    failAlert.Type, failAlert.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<SavePatientInvestigationTechnicalNoteResponse>.Failure(
+                    alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetPatientInvestigationTechnicalNote(int investigationId)
+        {
+            try
+            {
+                _log.Info($"GetPatientInvestigationTechnicalNote called. InvestigationId={investigationId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_PatientInvestigationTechnicalNoteDetails",
+                    CommandType.StoredProcedure,
+                    new { @InvestigationId = investigationId });
+
+                // Raw SP output, no model mapping
+                var result = dataTable.ToRawList();
+
+                if (!result.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No technical notes found", 404);
+                }
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(
+                    result, success.Type, $"{result.Count} technical note(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<object>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<string> DeletePatientInvestigationTechnicalNote(int id)
+        {
+            try
+            {
+                _log.Info($"DeletePatientInvestigationTechnicalNote called. Id={id}");
+
+                var rows = _sqlHelper.DML(
+                    "D_PatientInvestigationTechnicalNoteDetails",
+                    CommandType.StoredProcedure,
+                    new { @Id = id });
+
+                if (rows > 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_DELETED_SUCCESSFULLY");
+                    return ServiceResult<string>.Success(
+                        "Technical note deleted successfully", alert.Type, alert.Message, 200);
+                }
+
+                var notFound = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                return ServiceResult<string>.Failure(
+                    notFound.Type, "Technical note not found or already deleted", 404);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+
+        private const string CACHE_KEY_InvestigationResultEntryComment_All = "_InvestigationResultEntryCommentMaster_All";
+
+        public ServiceResult<CreateUpdateInvestigationResultEntryCommentResponse> CreateUpdateInvestigationResultEntryComment(
+            CreateUpdateInvestigationResultEntryCommentRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CreateUpdateInvestigationResultEntryComment called. Id={request.Id}, InvestigationId={request.InvestigationId}");
+
+                // SP uses a true OUTPUT param (no trailing SELECT) => RunProcedureInsert
+                long result = _sqlHelper.RunProcedureInsert(
+                    "IU_InvestigationResultEntryCommentMaster",
+                    new IDataParameter[]
+                    {
+                new SqlParameter("@Id", request.Id),
+                new SqlParameter("@InvestigationId", request.InvestigationId),
+                new SqlParameter("@CommentName", request.CommentName),
+                new SqlParameter("@CommentValue", request.CommentValue),
+                new SqlParameter("@IsActive", request.IsActive),
+
+                new SqlParameter("@UserId", globalValues.userId),
+                new SqlParameter("@IpAddress", (object)globalValues.ipAddress ?? DBNull.Value),
+                new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output }
+                    });
+
+                if (result == -1)
+                {
+                    var dupAlert = _messageService.GetMessageAndTypeByAlertCode("RECORD_ALREADY_EXISTS");
+                    _log.Warn($"Duplicate CommentName '{request.CommentName}' for InvestigationId={request.InvestigationId}");
+                    return ServiceResult<CreateUpdateInvestigationResultEntryCommentResponse>.Failure(
+                        dupAlert.Type, "Comment name already exists for this investigation", 409);
+                }
+
+                if (result > 0)
+                {
+                    _distributedCache.Remove(CACHE_KEY_InvestigationResultEntryComment_All);
+                    _log.Info($"Cleared InvestigationResultEntryComment cache. Id={result}");
+
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(
+                        request.Id == 0 ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY");
+
+                    return ServiceResult<CreateUpdateInvestigationResultEntryCommentResponse>.Success(
+                        new CreateUpdateInvestigationResultEntryCommentResponse { Id = (int)result },
+                        alert.Type, alert.Message, request.Id == 0 ? 201 : 200);
+                }
+
+                var failAlert = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                return ServiceResult<CreateUpdateInvestigationResultEntryCommentResponse>.Failure(failAlert.Type, failAlert.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateInvestigationResultEntryCommentResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<object> GetInvestigationResultEntryCommentMaster(int? investigationId, int? isActive)
+        {
+            try
+            {
+                _log.Info($"GetInvestigationResultEntryCommentMaster called. InvestigationId={investigationId?.ToString() ?? "All"}, IsActive={isActive?.ToString() ?? "All"}");
+
+                var cachedData = _distributedCache.GetString(CACHE_KEY_InvestigationResultEntryComment_All);
+                List<Dictionary<string, object>> allRows;
+
+                if (!string.IsNullOrEmpty(cachedData))
+                {
+                    allRows = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cachedData)
+                              ?? new List<Dictionary<string, object>>();
+                }
+                else
+                {
+                    var dataTable = _sqlHelper.GetDataTable(
+                        "S_GetInvestigationResultEntryCommentMaster", CommandType.StoredProcedure);
+
+                    // Raw SP output, no model mapping: new columns flow through automatically
+                    allRows = dataTable?.AsEnumerable().Select(row =>
+                        dataTable.Columns.Cast<DataColumn>().ToDictionary(
+                            col => col.ColumnName,
+                            col => row[col] == DBNull.Value ? null : row[col])
+                    ).ToList() ?? new List<Dictionary<string, object>>();
+
+                    if (allRows.Any())
+                    {
+                        _distributedCache.SetString(CACHE_KEY_InvestigationResultEntryComment_All,
+                            JsonSerializer.Serialize(allRows),
+                            new DistributedCacheEntryOptions { AbsoluteExpiration = null, SlidingExpiration = null });
+                        _log.Info($"InvestigationResultEntryComment cached permanently. Count={allRows.Count}");
+                    }
+                }
+
+                static int? GetInt(Dictionary<string, object> row, string key)
+                {
+                    if (!row.TryGetValue(key, out var val) || val == null) return null;
+                    if (val is JsonElement je)
+                    {
+                        if (je.ValueKind == JsonValueKind.Number && je.TryGetInt32(out int n)) return n;
+                        if (je.ValueKind == JsonValueKind.True) return 1;
+                        if (je.ValueKind == JsonValueKind.False) return 0;
+                        return null;
+                    }
+                    return Convert.ToInt32(val);
+                }
+
+                var filtered = allRows;
+
+                if (investigationId.HasValue)
+                    filtered = filtered.Where(r => GetInt(r, "InvestigationId") == investigationId.Value).ToList();
+
+                // Table/SP currently have no IsActive column, so apply this filter only if the column is returned
+                if (isActive.HasValue && filtered.Any() && filtered[0].ContainsKey("IsActive"))
+                    filtered = filtered.Where(r => GetInt(r, "IsActive") == isActive.Value).ToList();
+
+                if (!filtered.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<object>.Failure(alert.Type, "No investigation result entry comments found", 404);
+                }
+
+                var success = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
+                return ServiceResult<object>.Success(filtered, success.Type,
+                    $"{filtered.Count} comment(s) retrieved successfully", 200);
             }
             catch (Exception ex)
             {

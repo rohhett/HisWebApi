@@ -122,8 +122,47 @@ namespace HISWEBAPI.Services.Implementations
 
         int dummyMode = 0;
 
+        //------------------------ Report style (overridable from LabReportPrintSettingMaster)
+        // fonts (px, relative to BrowserWidth)
+        string FontFamily = "Arial";
+        int BaseFontSize = 14;
+        int InvestigationNameFontSize = 16;
+        int TableHeaderFontSize = 14;
+        int MethodFontSize = 13;
 
+        // colours
+        string ThemeColor = "#B94A52";
+        string ThemeTextColor = "#FFFFFF";
+        string TableHeaderBgColor = "#D9D9D9";
+        string TableHeaderTextColor = "#000000";
+        string AltRowColor = "#F2F2F2";
+        string GridLineColor = "#DDDDDD";
+        string AbnormalResultColor = "#000000";
 
+        // spacing (px)
+        int RowSpacing = 3;
+        int InvestigationSpacing = 14;
+
+        // bold
+        bool ObservationNameBold = false;
+        bool ResultBoldIfAbnormal = true;
+
+        // show / hide
+        bool ShowInvestigationBand = true;
+        bool ShowSampleType = true;
+        bool ShowAccessionInfo = true;
+        bool ShowDepartmentName = false;
+        bool ShowMethodColumn = true;
+        bool ShowStripedRows = true;
+        bool ShowGridLines = true;
+        bool ShowEndOfReport = true;
+
+        int stripeIndex = 0;
+
+        private static readonly System.Text.RegularExpressions.Regex ColorRegex =
+            new(@"^(#[0-9A-Fa-f]{3}|#[0-9A-Fa-f]{6}|[A-Za-z]{3,20})$");
+        private static readonly System.Text.RegularExpressions.Regex FontRegex =
+            new(@"^[A-Za-z0-9 ,'\-]{1,100}$");
 
         DataRow drRunning;
         DataRow drPrevious = null;
@@ -132,11 +171,46 @@ namespace HISWEBAPI.Services.Implementations
         /// <summary>Loads print settings (branch value -> default row) from DB and applies them.</summary>
         private void ApplyPrintSettings(int branch)
         {
-            var s = _printSettingRepository.GetEffectiveSetting(branch);
+            // preview API (DummyMode 3) always reads fresh values so direct table edits show immediately
+            var s = _printSettingRepository.GetEffectiveSetting(branch, refreshCache: dummyMode == PatientLabReport.PrintSettingPreviewMode);
             if (s.Count == 0) return;                       // keep hard-coded fallbacks
 
-            int I(string key, int current) => s.TryGetValue(key, out var v) && v.HasValue ? v.Value : current;
-            bool B(string key, bool current) => s.TryGetValue(key, out var v) && v.HasValue ? v.Value == 1 : current;
+            // value missing / null / invalid -> keep the current (hard-coded default) value
+            int I(string key, int current) => s.TryGetValue(key, out var v) && int.TryParse(v, out var n) ? n : current;
+            bool B(string key, bool current) => s.TryGetValue(key, out var v) && int.TryParse(v, out var n) ? n == 1 : current;
+            string C(string key, string current) => s.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) && ColorRegex.IsMatch(v.Trim()) ? v.Trim() : current;
+            string F(string key, string current) => s.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v) && FontRegex.IsMatch(v.Trim()) ? v.Trim() : current;
+            int Size(string key, int current, int min, int max) { int n = I(key, current); return n < min || n > max ? current : n; }
+
+            // style: fonts
+            FontFamily = F("FontFamily", FontFamily);
+            BaseFontSize = Size("BaseFontSize", BaseFontSize, 6, 40);
+            InvestigationNameFontSize = Size("InvestigationNameFontSize", InvestigationNameFontSize, 6, 40);
+            TableHeaderFontSize = Size("TableHeaderFontSize", TableHeaderFontSize, 6, 40);
+            MethodFontSize = Size("MethodFontSize", MethodFontSize, 6, 40);
+
+            // style: colours
+            ThemeColor = C("ThemeColor", ThemeColor);
+            ThemeTextColor = C("ThemeTextColor", ThemeTextColor);
+            TableHeaderBgColor = C("TableHeaderBgColor", TableHeaderBgColor);
+            TableHeaderTextColor = C("TableHeaderTextColor", TableHeaderTextColor);
+            AltRowColor = C("AltRowColor", AltRowColor);
+            GridLineColor = C("GridLineColor", GridLineColor);
+            AbnormalResultColor = C("AbnormalResultColor", AbnormalResultColor);
+
+            // style: spacing / bold / show-hide
+            RowSpacing = Size("RowSpacing", RowSpacing, 0, 30);
+            InvestigationSpacing = Size("InvestigationSpacing", InvestigationSpacing, 0, 100);
+            ObservationNameBold = B("ObservationNameBold", ObservationNameBold);
+            ResultBoldIfAbnormal = B("ResultBoldIfAbnormal", ResultBoldIfAbnormal);
+            ShowInvestigationBand = B("ShowInvestigationBand", ShowInvestigationBand);
+            ShowSampleType = B("ShowSampleType", ShowSampleType);
+            ShowAccessionInfo = B("ShowAccessionInfo", ShowAccessionInfo);
+            ShowDepartmentName = B("ShowDepartmentName", ShowDepartmentName);
+            ShowMethodColumn = B("ShowMethodColumn", ShowMethodColumn);
+            ShowStripedRows = B("ShowStripedRows", ShowStripedRows);
+            ShowGridLines = B("ShowGridLines", ShowGridLines);
+            ShowEndOfReport = B("ShowEndOfReport", ShowEndOfReport);
 
             // page / body
             MarginLeft = I("MarginLeft", MarginLeft);
@@ -288,20 +362,12 @@ namespace HISWEBAPI.Services.Implementations
 
             dtPatientInvestigations = _patientLabReport.GetPatientInvestigationsForReportPrint(branchId, isHeaderPNG, patientInvestigationIds, userId, dummyMode);
 
-            StringBuilder sbStyles = new StringBuilder();
-            sbStyles.Append("<style>");
-            sbStyles.Append("body { font-family: 'Arial'; margin: 0; padding: 0; font-size: 15px; } ");
-            sbStyles.Append("table { width: 100%; border-collapse: collapse; margin: 0; } ");
-            sbStyles.Append("th, td { border: none; padding: 2px; text-align: left; vertical-align: top; font-size: 15px; } ");
-            sbStyles.Append(".deptName { text-align: center; font-size: 20px; font-weight: bold; padding: 5px; margin-top:0px; font-family: 'Times New Roman', Times, serif; } ");
-            sbStyles.Append(".tabularHeader { font-weight: bold; font-size: 14px; border:1px solid; } ");
-            sbStyles.Append(".investigationName { text-align: left; font-size: 15px; font-weight: bold; padding: 3px 0; } ");
-            sbStyles.Append(".sampleInfo { text-align: left; font-size: 14px; padding-left: 15px; color: #555; } ");
-            sbStyles.Append(".resultTable { font-size: 15px; line-height: 17px; } ");
-            sbStyles.Append(".resultTd { padding: 2px; } ");
-            sbStyles.Append(".observation-method { font-size: 12px; } ");
-            sbStyles.Append(".no-border { border: none !important; } ");
-            sbStyles.Append("</style>");
+            // all print settings (layout + style) are loaded once per report, before the styles are built
+            ApplyPrintSettings(branchId);
+            isSendEmail = false;
+            isSendWhtsAppMessage = false;
+
+            string sbStyles = BuildStyles();
 
             StringBuilder sb = new StringBuilder();
             List<Tuple<int, byte[], string>> pdfSequence = new List<Tuple<int, byte[], string>>();
@@ -325,7 +391,6 @@ namespace HISWEBAPI.Services.Implementations
 
                 foreach (DataRow dr in dtPatientInvestigations.Rows)
                 {
-                    ApplyPrintSettings(1);
                     //XSignature = int.TryParse(dr["XSign"]?.ToString(), out var FRA) ? FRA : 450;
                     //YSignature = int.TryParse(dr["YSign"]?.ToString(), out var FRB) ? FRB : 10;
                     //HeaderHeight = int.TryParse(dr["HeaderHeight"]?.ToString(), out var FRC) ? FRC : 210;
@@ -437,190 +502,51 @@ namespace HISWEBAPI.Services.Implementations
                         }
                     }
 
-                    // Show department name ONLY when page changes
-                    if ((preLabNo != dr["LabNo"].ToString() || isPageChanged) && !headerPrintedOnCurrentPage)
+                    // Department name ONLY when lab no / page changes (setting: ShowDepartmentName)
+                    if (ShowDepartmentName && (preLabNo != dr["LabNo"].ToString() || isPageChanged) && !headerPrintedOnCurrentPage)
                     {
-                        sb.Append("<tr class='deptName'><td colspan='5' style='text-align: center;font-size: 18px; padding-bottom: 5px;'> " + dr["Department"].ToString().ToUpper() + " </td> </tr>");
+                        sb.Append("<tr class='deptName'><td colspan='5'> " + dr["Department"].ToString().ToUpper() + " </td></tr>");
                     }
 
                     if (drRunning["ReportTypeId"].ToString() == "1")//Tabular Report
                     {
-                        // FIXED LOGIC: Print header only if:
-                        // 1. LabNo changed OR page changed, AND
-                        // 2. Header hasn't been printed on current page yet
-                        if ((preLabNo != dr["LabNo"].ToString() || isPageChanged) && !headerPrintedOnCurrentPage)
-                        {
-                            sb.Append(" <tr class='tabularHeader'> ");
-                            sb.Append("<td style='width:35%; padding: 3px; '>Test Name</td> ");
-                            sb.Append("<td style='width:14%; padding: 3px; '>Result</td> ");
-                            sb.Append("<td style='width:9%;  padding: 3px; '>Unit</td> ");
-                            sb.Append("<td style='width:28%; padding: 3px; '>Bio. Ref. Range</td> ");
-                            sb.Append("<td style='width:19%; padding: 3px; '>Method</td> ");
-                            sb.Append(" </tr>");
-                            headerPrintedOnCurrentPage = true; // Mark header as printed
-                        }
-
                         DataTable dtTabularReport = _patientLabReport.GetPatientTabularReportForPrint(Utility.getInt(dr["PatientInvestigationId"]), dummyMode);
-                        if (!(hideInvtNameforSingleTest && dtTabularReport.Rows.Count == 1))
-                        {
-                            sb.Append(" <tr> ");
-                            if (!String.IsNullOrEmpty(drRunning["NABLFilePath"].ToString()))
-                            {
-                                sb.Append("<td colspan='5' class='investigationName' style=''><img src='" + drRunning["NABLFilePath"].ToString().Replace("-", "\\") + "' style='height: 25px; margin-left: 10px; margin-right: 10px; vertical-align: middle;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                            }
-                            else if (Utility.getInt(drRunning["IsDefaultLogo"]) == 1)
-                            {
-                                sb.Append("<td colspan='5' class='investigationName' style=''><img src='" + defaultNABLLogoPath + "' style='height: 25px; margin-left: 10px; margin-right: 10px; vertical-align: middle;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                            }
-                            else
-                            {
-                                sb.Append("<td colspan='5' class='investigationName' style=''>" + dr["InvestigationName"].ToString() + "</td> ");
-                            }
-                            sb.Append(" </tr>");
+                        bool singleTestMode = hideInvtNameforSingleTest && dtTabularReport.Rows.Count == 1;
+                        bool newLabOrPage = preLabNo != dr["LabNo"].ToString() || isPageChanged;
 
-                            if (!String.IsNullOrEmpty(dr["SampleType"].ToString()) || !String.IsNullOrEmpty(dr["InvestigationMethod"].ToString()))
+                        if (ShowInvestigationBand)
+                        {
+                            // New layout: coloured bar (test name + sample) -> accession line -> column header, for every investigation
+                            if (!singleTestMode)
+                                AppendInvestigationTitle(sb, dr);
+
+                            if (!singleTestMode || !headerPrintedOnCurrentPage)
                             {
-                                string strSampleType = string.Empty;
+                                AppendColumnHeader(sb);
+                                headerPrintedOnCurrentPage = true;
+                            }
+                        }
+                        else
+                        {
+                            // Old layout: one column header per page, then plain test name + method line
+                            if (newLabOrPage && !headerPrintedOnCurrentPage)
+                            {
+                                AppendColumnHeader(sb);
+                                headerPrintedOnCurrentPage = true;
+                            }
+
+                            if (!singleTestMode)
+                            {
+                                AppendInvestigationTitle(sb, dr);
                                 if (!String.IsNullOrEmpty(dr["InvestigationMethod"].ToString()))
-                                    strSampleType += "<u>Method</u> : " + dr["InvestigationMethod"].ToString();
-                                sb.Append(" <tr> ");
-                                sb.Append("<td colspan='5' class='sampleInfo' style=''>" + strSampleType + "</td> ");
-                                sb.Append(" </tr>");
+                                    sb.Append("<tr><td colspan='5' class='sampleInfo'><u>Method</u> : " + dr["InvestigationMethod"].ToString() + "</td></tr>");
                             }
                         }
 
+                        stripeIndex = 0;
                         foreach (DataRow resultRow in dtTabularReport.Rows)
                         {
-                            sb.Append(" <tr class='resultTable'> ");
-
-                            if (hideInvtNameforSingleTest && dtTabularReport.Rows.Count == 1)
-                            {
-                                sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left;'>" + resultRow["ObservationName"].ToString() + "</td> ");
-                                if (resultRow["FieldTypeId"].ToString() == "1")
-                                {
-                                    bool isAbnormal = false;
-                                    if (decimal.TryParse(resultRow["ResultValue"].ToString(), out _) &&
-                                        decimal.TryParse(resultRow["MinValue"].ToString(), out _) &&
-                                        decimal.TryParse(resultRow["MaxValue"].ToString(), out _))
-                                    {
-                                        if ((Utility.getDecimal(resultRow["ResultValue"].ToString()) < Utility.getDecimal(resultRow["MinValue"].ToString())) ||
-                                            (Utility.getDecimal(resultRow["ResultValue"].ToString()) > Utility.getDecimal(resultRow["MaxValue"].ToString())))
-                                        {
-                                            sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                            isAbnormal = true;
-                                        }
-                                        else
-                                        {
-                                            if (resultRow["IsResultBold"].ToString() == "1")
-                                                sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                            else
-                                                sb.Append("<td style='padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (resultRow["IsResultBold"].ToString() == "1")
-                                            sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                        else
-                                            sb.Append("<td style='padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                    }
-                                    sb.Append("<td style='padding: 2px; text-align: left;'>" + resultRow["Unit"].ToString() + "</td> ");
-                                    sb.Append("<td style='padding: 2px; text-align: left;'>" + resultRow["DisplayRange"].ToString() + "</td> ");
-
-                                    // Method ke liye special fix: line breaks replace + nowrap
-                                    string observationMethod = resultRow["ObservationMethod"].ToString().Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
-                                    sb.Append("<td style='padding: 2px; font-size: 14px; text-align: left; white-space: nowrap; min-width: 150px;' class='observation-method'>" + observationMethod + "</td> ");
-                                }
-                                else
-                                {
-                                    if (resultRow["IsResultBold"].ToString() == "1")
-                                        sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left; ' colspan='4'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                    else
-                                        sb.Append("<td style='padding: 2px; text-align: left; ' colspan='4'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                }
-                            }
-                            else
-                            {
-                                if (resultRow["IsHeader"].ToString() == "1")
-                                {
-                                    string headerStyle = "";
-                                    if (resultRow["IsBold"].ToString() == "True" && resultRow["IsUnderLine"].ToString() == "True")
-                                        headerStyle = "style='font-weight: bold; text-decoration: underline; background-color: #; padding: 4px; text-align: left;'";
-                                    else if (resultRow["IsBold"].ToString() == "True")
-                                        headerStyle = "style='font-weight: bold; background-color: #; padding: 4px; text-align: left;'";
-                                    else if (resultRow["IsUnderLine"].ToString() == "True")
-                                        headerStyle = "style='text-decoration: underline; background-color: #; padding: 4px; text-align: left;'";
-                                    else
-                                        headerStyle = "style='background-color: #; padding: 4px; text-align: left;'";
-                                    sb.Append("<td " + headerStyle + " colspan='4'>" + resultRow["ObservationName"].ToString() + "</td> ");
-                                    string headerMethod = resultRow["ObservationMethod"].ToString().Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
-                                    sb.Append("<td colspan='1' style='padding: 6px; font-size: 14px; text-align: left; white-space: nowrap; min-width: 150px;' class='observation-method'>" + headerMethod + "</td> ");
-                                }
-                                else
-                                {
-                                    string cellStyle = "";
-                                    if (resultRow["IsBold"].ToString() == "True" && resultRow["IsUnderLine"].ToString() == "True")
-                                        cellStyle = "style='font-weight: bold; text-decoration: underline; padding: 2px; text-align: left;'";
-                                    else if (resultRow["IsBold"].ToString() == "True")
-                                        cellStyle = "style='font-weight: bold; padding: 2px; text-align: left;'";
-                                    else if (resultRow["IsUnderLine"].ToString() == "True")
-                                        cellStyle = "style='text-decoration: underline; padding: 2px; text-align: left;'";
-                                    else
-                                        cellStyle = "style='padding: 2px; text-align: left;'";
-                                    sb.Append("<td " + cellStyle + ">" + resultRow["ObservationName"].ToString() + "</td> ");
-
-                                    if (resultRow["FieldTypeId"].ToString() == "1")
-                                    {
-                                        bool isAbnormal = false;
-                                        if (decimal.TryParse(resultRow["ResultValue"].ToString(), out _) &&
-                                            decimal.TryParse(resultRow["MinValue"].ToString(), out _) &&
-                                            decimal.TryParse(resultRow["MaxValue"].ToString(), out _))
-                                        {
-                                            if ((Utility.getDecimal(resultRow["ResultValue"].ToString()) < Utility.getDecimal(resultRow["MinValue"].ToString())) ||
-                                                (Utility.getDecimal(resultRow["ResultValue"].ToString()) > Utility.getDecimal(resultRow["MaxValue"].ToString())))
-                                            {
-                                                sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                                isAbnormal = true;
-                                            }
-                                            else
-                                            {
-                                                if (resultRow["IsResultBold"].ToString() == "1")
-                                                    sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                                else
-                                                    sb.Append("<td style='padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                            }
-                                        }
-                                        else
-                                        {
-                                            if (resultRow["IsResultBold"].ToString() == "1")
-                                                sb.Append("<td style='font-weight: bold; padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                            else
-                                                sb.Append("<td style='padding: 2px; text-align: left;'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                        }
-                                        sb.Append("<td style='padding: 2px; text-align: left; '>" + resultRow["Unit"].ToString() + "</td> ");
-                                        sb.Append("<td style='padding: 2px; text-align: left; '>" + resultRow["DisplayRange"].ToString() + "</td> ");
-
-                                        // Method ke liye fix
-                                        string observationMethod = resultRow["ObservationMethod"].ToString().Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
-                                        sb.Append("<td style='padding: 2px; font-size: 14px; text-align: left; white-space: nowrap; min-width: 150px;' class='observation-method'>" + observationMethod + "</td> ");
-                                    }
-                                    else
-                                    {
-                                        if (resultRow["IsResultBold"].ToString() == "1")
-                                            sb.Append("<td style='font-weight: bold; padding: 2px; ' colspan='4'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                        else
-                                            sb.Append("<td style='padding: 2px; ' colspan='4'>" + resultRow["ResultValue"].ToString() + "</td> ");
-                                    }
-                                }
-                            }
-                            sb.Append(" </tr>");
-
-                            if (!String.IsNullOrEmpty(resultRow["ObservationComment"].ToString()))
-                            {
-                                sb.Append(" <tr>");
-                                sb.Append("<td colspan='5' style='padding-left: 20px; padding-bottom: 5px; font-style: italic; color: #555; '>" + resultRow["ObservationComment"].ToString() + "</td> ");
-                                sb.Append(" </tr>");
-                            }
+                            AppendResultRow(sb, resultRow, singleTestMode);
                         }
 
 
@@ -634,12 +560,7 @@ namespace HISWEBAPI.Services.Implementations
 
                         if (!string.IsNullOrEmpty(dr["InvestigationComment"].ToString()))
                         {
-                            sb.Append("<tr>");
-                            sb.Append("<td colspan='5' style='font-size:14px; padding:5px; background-color:#f8f9fa;'>");
-                            sb.Append("<strong>Comments :-   </strong><br/>");
-                            sb.Append(dr["InvestigationComment"].ToString());
-                            sb.Append("</td>");
-                            sb.Append("</tr>");
+                            AppendRemarks(sb, dr["InvestigationComment"].ToString());
                         }
 
                         if (!string.IsNullOrEmpty(dr["interpretation"].ToString()))
@@ -658,7 +579,7 @@ namespace HISWEBAPI.Services.Implementations
 
                             sb.Append("<tr>");
                             sb.Append("<td colspan='5' style='font-size:14px; border:1px solid #333; padding:12px; background-color:#f8f9fa;'>");
-                            //sb.Append("<strong>Interpretation :</strong><br/>");
+                            sb.Append("<strong>Interpretation :</strong><br/>");
                             sb.Append(interpretationHtml);
                             sb.Append("</td>");
                             sb.Append("</tr>");
@@ -687,20 +608,7 @@ namespace HISWEBAPI.Services.Implementations
                     {
                         DataTable dtFreeTextReport = _patientLabReport.GetPatientFreeTextReportForPrint(Utility.getInt(dr["PatientInvestigationId"]), dummyMode);
 
-                        sb.Append(" <tr> ");
-                        if (!String.IsNullOrEmpty(drRunning["NABLFilePath"].ToString()))
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'><img src=" + drRunning["NABLFilePath"].ToString().Replace("-", "\\") + " style='height: 25px;margin-left:10px;margin-right:10px;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        else if (Utility.getInt(drRunning["IsDefaultLogo"]) == 1)
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'><img src=" + defaultNABLLogoPath + "   style='height: 25px;margin-left:10px;margin-right:10px;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        else
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'>" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        sb.Append(" </tr>");
+                        AppendInvestigationTitle(sb, dr);
 
                         sb.Append(" <tr style='font-size: 14px;'> ");
                         // sb.Append("<td colspan='5' style='padding-left:15px;' class='resultTd'>" + dtFreeTextReport.Rows[0]["ResultValue"].ToString() + "</td> ");
@@ -735,12 +643,7 @@ namespace HISWEBAPI.Services.Implementations
                         string investigationComment = dtFreeTextReport.Rows[0]["InvestigationComment"]?.ToString() ?? "";
                         if (!string.IsNullOrEmpty(investigationComment))
                         {
-                            sb.Append("<tr>");
-                            sb.Append("<td colspan='5' style='font-size:14px; padding:5px; background-color:#f8f9fa;'>");
-                            sb.Append("<strong>Comments :-</strong><br/>");
-                            sb.Append(investigationComment);
-                            sb.Append("</td>");
-                            sb.Append("</tr>");
+                            AppendRemarks(sb, investigationComment);
                         }
                     }
                     //---merge here Al
@@ -817,21 +720,7 @@ namespace HISWEBAPI.Services.Implementations
 
                     {
                         DataTable dtHistoReport = _patientLabReport.GetPatientHistoReportForPrint(Utility.getInt(dr["PatientInvestigationId"]), dummyMode);
-                        sb.Append(" <tr> ");
-                        if (!String.IsNullOrEmpty(drRunning["NABLFilePath"].ToString()))
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'><img src=" + drRunning["NABLFilePath"].ToString().Replace("-", "\\") + " style='height: 25px;margin-left:10px;margin-right:10px;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        else if (Utility.getInt(drRunning["IsDefaultLogo"]) == 1)
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'><img src=" + defaultNABLLogoPath + "   style='height: 25px;margin-left:10px;margin-right:10px;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        else
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'>" + dr["InvestigationName"].ToString() + "</td> ");
-
-                        }
-                        sb.Append(" </tr>");
+                        AppendInvestigationTitle(sb, dr);
 
 
                         sb.Append(" <tr style='margin-top:25px;font-size: 14px;'> ");
@@ -859,20 +748,7 @@ namespace HISWEBAPI.Services.Implementations
                         DataTable dtMicroReport = _patientLabReport.GetPatientMicroReportForPrint(Utility.getInt(dr["PatientInvestigationId"]), dummyMode);
 
                         // ================= Investigation Name =================
-                        sb.Append(" <tr> ");
-                        if (!String.IsNullOrEmpty(drRunning["NABLFilePath"].ToString()))
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'><img src=" + drRunning["NABLFilePath"].ToString().Replace("-", "\\") + " style='height: 25px;margin-left:10px;margin-right:10px;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        else if (Utility.getInt(drRunning["IsDefaultLogo"]) == 1)
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'><img src=" + defaultNABLLogoPath + " style='height: 25px;margin-left:10px;margin-right:10px;' />" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        else
-                        {
-                            sb.Append("<td colspan='5' class='investigationName'>" + dr["InvestigationName"].ToString() + "</td> ");
-                        }
-                        sb.Append(" </tr>");
+                        AppendInvestigationTitle(sb, dr);
 
                         // ================= Culture Section =================
                         if (!string.IsNullOrEmpty(dtMicroReport.Rows[0]["ResultValueCulture"].ToString()))
@@ -1111,7 +987,8 @@ namespace HISWEBAPI.Services.Implementations
                     sb.Append("</div>");
                 }
 
-                sb.Append("<div style='text-align: center; font-size: 16px; font-weight: bold; padding: 4px; color: #000000;font-family: \"Times New Roman\", Times, serif; '>************* End of Report *************</div>");
+                if (ShowEndOfReport)
+                    sb.Append("<div style='text-align: center; font-size: " + (BaseFontSize + 1) + "px; font-weight: bold; padding: 4px; color: #000000;'>************* End of Report *************</div>");
 
                 html1LayoutInfo = null;
                 AddContent(sb.ToString());
@@ -1133,6 +1010,244 @@ namespace HISWEBAPI.Services.Implementations
 
             return pdfBuffer;
         }
+
+        // ───────────────────────── report body helpers (driven by print settings) ─────────────────────────
+
+        /// <summary>CSS for the report body built from font / colour / spacing settings.</summary>
+        private string BuildStyles()
+        {
+            string font = CssFontFamily(FontFamily);
+            string grid = ShowGridLines ? $"border-bottom: 1px solid {GridLineColor}; border-right: 1px solid {GridLineColor};" : "";
+            int smallFont = Math.Max(BaseFontSize - 1, 6);
+
+            var css = new StringBuilder();
+            css.Append("<style>");
+            css.Append($"body {{ font-family: {font}; margin: 0; padding: 0; font-size: {BaseFontSize}px; }} ");
+            css.Append("table { width: 100%; border-collapse: collapse; margin: 0; } ");
+            css.Append($"th, td {{ border: none; padding: 2px; text-align: left; vertical-align: top; font-size: {BaseFontSize}px; font-family: {font}; }} ");
+            css.Append($".deptName td {{ text-align: center; font-size: {InvestigationNameFontSize + 2}px; font-weight: bold; padding: 5px; }} ");
+            // coloured bar: test name (left) + sample type (right)
+            css.Append($".invBand td {{ background-color: {ThemeColor}; color: {ThemeTextColor}; font-weight: bold; padding: 5px 10px; vertical-align: middle; }} ");
+            css.Append($".invBand td.invName {{ font-size: {InvestigationNameFontSize}px; }} ");
+            css.Append($".invBand td.invSample {{ font-size: {smallFont}px; text-align: right; }} ");
+            // accession / collected / received / approved line
+            // one line, slightly smaller so all 4 items fit the page width
+            css.Append($".accInfo td {{ font-size: {Math.Max(BaseFontSize - 2, 6)}px; padding: 4px 4px; white-space: nowrap; }} ");
+            // column header (Observation | Result | Unit | Ref. Interval | Method)
+            css.Append($".colHeader td {{ background-color: {TableHeaderBgColor}; color: {TableHeaderTextColor}; font-weight: bold; font-size: {TableHeaderFontSize}px; padding: {RowSpacing + 2}px 8px; }} ");
+            css.Append($".investigationName {{ text-align: left; font-size: {InvestigationNameFontSize}px; font-weight: bold; padding: 3px 0; }} ");
+            css.Append($".sampleInfo {{ text-align: left; font-size: {smallFont}px; padding-left: 15px; color: #555; }} ");
+            // result rows: RowSpacing = space between two rows
+            css.Append($".resultRow td {{ padding: {RowSpacing}px 8px; font-size: {BaseFontSize}px; {grid} }} ");
+            css.Append(".resultRow td.lastCell { border-right: none; } ");
+            css.Append($".resultRow td.abnormal {{ color: {AbnormalResultColor}; }} ");
+            css.Append($".resultRow td.observation-method, .observation-method {{ font-size: {MethodFontSize}px; white-space: nowrap; }} ");
+            css.Append(".obsComment td { padding-left: 20px; padding-bottom: 5px; font-style: italic; color: #555; } ");
+            css.Append($".resultTable {{ font-size: {BaseFontSize}px; line-height: {BaseFontSize + 2}px; }} ");
+            css.Append(".resultTd { padding: 2px; } ");
+            css.Append(".no-border { border: none !important; } ");
+            css.Append("</style>");
+            return css.ToString();
+        }
+
+        /// <summary>"Arial, Times New Roman" -> "'Arial', 'Times New Roman', sans-serif"</summary>
+        private static string CssFontFamily(string font)
+        {
+            var generic = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "serif", "sans-serif", "monospace", "cursive", "fantasy" };
+            var parts = new List<string>();
+            bool hasGeneric = false;
+            foreach (string p in (font ?? "").Split(','))
+            {
+                string name = p.Replace("'", "").Replace("\"", "").Trim();
+                if (name.Length == 0) continue;
+                if (generic.Contains(name)) { parts.Add(name); hasGeneric = true; }
+                else parts.Add("'" + name + "'");
+            }
+            if (parts.Count == 0) parts.Add("'Arial'");
+            if (!hasGeneric) parts.Add("sans-serif");
+            return string.Join(", ", parts);
+        }
+
+        private string NablImageHtml(int height)
+        {
+            string path;
+            if (!string.IsNullOrEmpty(drRunning["NABLFilePath"].ToString()))
+                path = drRunning["NABLFilePath"].ToString().Replace("-", "\\");
+            else if (Utility.getInt(drRunning["IsDefaultLogo"]) == 1)
+                path = defaultNABLLogoPath;
+            else
+                return string.Empty;
+
+            return $"<img src='{path}' style='height: {height}px; margin-left: 10px; margin-right: 10px; vertical-align: middle;' />";
+        }
+
+        /// <summary>Test name: coloured bar (+ accession line) when ShowInvestigationBand, otherwise the old plain bold row.</summary>
+        private void AppendInvestigationTitle(StringBuilder sb, DataRow dr)
+        {
+            string name = NablImageHtml(25) + dr["InvestigationName"].ToString();
+
+            if (!ShowInvestigationBand)
+            {
+                sb.Append("<tr><td colspan='5' class='investigationName'>" + name + "</td></tr>");
+                return;
+            }
+
+            string sample = string.Empty;
+            if (ShowSampleType)
+            {
+                sample = dr["SampleType"].ToString().Trim();
+                if (sample.Length > 0 && !sample.EndsWith("sample", StringComparison.OrdinalIgnoreCase))
+                    sample += " Sample";
+            }
+
+            sb.Append($"<tr><td colspan='5' style='padding: {InvestigationSpacing}px 0 0 0;'>");
+            sb.Append("<table class='invBand'><tr>");
+            sb.Append("<td class='invName'>" + name + "</td>");
+            sb.Append("<td class='invSample'>" + sample + "</td>");
+            sb.Append("</tr></table></td></tr>");
+
+            if (ShowAccessionInfo)
+                AppendAccessionInfo(sb, dr);
+        }
+
+        /// <summary>Accession No | Collected On | Received On | Approved On (empty values are skipped).</summary>
+        private void AppendAccessionInfo(StringBuilder sb, DataRow dr)
+        {
+            var cells = new StringBuilder();
+            void Add(string label, string column)
+            {
+                if (!dr.Table.Columns.Contains(column)) return;
+                string value = dr[column].ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(value) && value != "0")
+                    cells.Append($"<td><b>{label}:</b> {value}</td>");
+            }
+
+            Add("Accession No", "BarCode");
+            Add("Collected On", "InvSampleColDateTime");
+            Add("Received On", "InvDeptRecDateTime");
+            Add("Approved On", "InvReportApprovalDateTime");
+
+            if (cells.Length == 0) return;
+            sb.Append("<tr><td colspan='5' style='padding: 0;'><table class='accInfo'><tr>" + cells + "</tr></table></td></tr>");
+        }
+
+        private void AppendColumnHeader(StringBuilder sb)
+        {
+            sb.Append("<tr class='colHeader'>");
+            sb.Append("<td style='width: 34%;'>Observation</td>");
+            sb.Append("<td style='width: 13%;'>Result</td>");
+            sb.Append("<td style='width: 12%;'>Unit</td>");
+            if (ShowMethodColumn)
+            {
+                sb.Append("<td style='width: 22%;'>Biological Ref. Interval</td>");
+                sb.Append("<td style='width: 19%;'>Method</td>");
+            }
+            else
+            {
+                sb.Append("<td colspan='2' style='width: 41%;'>Biological Ref. Interval</td>");
+            }
+            sb.Append("</tr>");
+        }
+
+        private static bool IsAbnormal(DataRow r)
+        {
+            if (!decimal.TryParse(r["ResultValue"].ToString(), out decimal value) ||
+                !decimal.TryParse(r["MinValue"].ToString(), out decimal min) ||
+                !decimal.TryParse(r["MaxValue"].ToString(), out decimal max))
+                return false;
+            return value < min || value > max;
+        }
+
+        private string ResultCell(DataRow r, string bg, int colspan, bool isLastCell)
+        {
+            bool abnormal = IsAbnormal(r);
+            bool bold = r["IsResultBold"].ToString() == "1" || (abnormal && ResultBoldIfAbnormal);
+
+            string cls = ((abnormal ? "abnormal " : "") + (isLastCell ? "lastCell" : "")).Trim();
+            string span = colspan > 1 ? $" colspan='{colspan}'" : "";
+            return $"<td{span} class='{cls}' style='{(bold ? "font-weight: bold;" : "")}{bg}'>{r["ResultValue"]}</td>";
+        }
+
+        /// <summary>One observation row (+ its comment row). Striping / bold / method column follow print settings.</summary>
+        private void AppendResultRow(StringBuilder sb, DataRow r, bool singleTestMode)
+        {
+            string bg = ShowStripedRows && stripeIndex % 2 == 1 ? $" background-color: {AltRowColor};" : "";
+            stripeIndex++;
+
+            string name = r["ObservationName"].ToString();
+            bool isBold = r["IsBold"].ToString() == "True";
+            bool isUnderline = r["IsUnderLine"].ToString() == "True";
+            string method = r["ObservationMethod"].ToString().Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
+            string methodCell = $"<td class='observation-method lastCell' style='{bg}'>{method}</td>";
+
+            sb.Append("<tr class='resultRow'>");
+
+            if (!singleTestMode && r["IsHeader"].ToString() == "1")
+            {
+                // sub heading, e.g. "Differential Leucocyte Count (DLC)"
+                string style = (isBold ? "font-weight: bold;" : "") + (isUnderline ? " text-decoration: underline;" : "");
+                if (ShowMethodColumn)
+                {
+                    sb.Append($"<td colspan='4' style='{style}{bg}'>{name}</td>");
+                    sb.Append(methodCell);
+                }
+                else
+                {
+                    sb.Append($"<td colspan='5' class='lastCell' style='{style}{bg}'>{name}</td>");
+                }
+            }
+            else
+            {
+                bool nameBold = singleTestMode || isBold || ObservationNameBold;
+                string nameStyle = (nameBold ? "font-weight: bold;" : "") + (!singleTestMode && isUnderline ? " text-decoration: underline;" : "");
+                sb.Append($"<td style='{nameStyle}{bg}'>{name}</td>");
+
+                if (r["FieldTypeId"].ToString() == "1")
+                {
+                    sb.Append(ResultCell(r, bg, 1, false));
+                    sb.Append($"<td style='{bg}'>{r["Unit"]}</td>");
+                    if (ShowMethodColumn)
+                    {
+                        sb.Append($"<td style='{bg}'>{r["DisplayRange"]}</td>");
+                        sb.Append(methodCell);
+                    }
+                    else
+                    {
+                        sb.Append($"<td colspan='2' class='lastCell' style='{bg}'>{r["DisplayRange"]}</td>");
+                    }
+                }
+                else
+                {
+                    sb.Append(ResultCell(r, bg, 4, true));
+                }
+            }
+
+            sb.Append("</tr>");
+
+            string comment = r["ObservationComment"].ToString();
+            if (!string.IsNullOrEmpty(comment))
+                sb.Append($"<tr class='obsComment'><td colspan='5'>{comment}</td></tr>");
+        }
+
+        /// <summary>Investigation comment: dashed "Remarks" block in the new layout, grey box in the old one.</summary>
+        private void AppendRemarks(StringBuilder sb, string remarks)
+        {
+            int smallFont = Math.Max(BaseFontSize - 1, 6);
+            sb.Append("<tr>");
+            if (ShowInvestigationBand)
+            {
+                sb.Append($"<td colspan='5' style='font-size: {smallFont}px; padding: 6px 4px; border-top: 1px dashed #999; border-bottom: 1px dashed #999;'>");
+                sb.Append("<b>Comments :</b> ");
+            }
+            else
+            {
+                sb.Append($"<td colspan='5' style='font-size: {smallFont}px; padding: 5px; background-color: #f8f9fa;'>");
+                sb.Append("<strong>Comments :-</strong><br/>");
+            }
+            sb.Append(remarks);
+            sb.Append("</td></tr>");
+        }
+
         private void AddContent(string Content)
         {
             PdfPage page1 = document.AddPage(PdfPageSize.A4, new PdfDocumentMargins(5), PdfPageOrientation.Portrait);
@@ -1223,7 +1338,8 @@ namespace HISWEBAPI.Services.Implementations
                 page.Header.Layout(borderRectangle);
             }
 
-            if (!String.IsNullOrEmpty(drRunning["LetterHeadFilePath"].ToString()) && isHeaderPNG == 1)
+            if (!String.IsNullOrEmpty(drRunning["LetterHeadFilePath"].ToString()) && isHeaderPNG == 1
+                && File.Exists(drRunning["LetterHeadFilePath"].ToString().Replace("-", "\\")))
             {
                 page.Layout(getPDFImageWaterMark(
                     -200 + float.Parse(drRunning["PaddingLeft"].ToString()),
@@ -1260,13 +1376,13 @@ namespace HISWEBAPI.Services.Implementations
                     page.Footer.Layout(getPDFImageforQRcode(XQRcode, YQRcode, downloadUrl));
             }
 
-            if (Barcode)
-            {
-                if (BarcodePosition == 1)
-                    page.Header.Layout(getPDFImageforBarcode(drRunning["LabNo"].ToString()));
-                else
-                    page.Footer.Layout(getPDFImageforBarcode(drRunning["LabNo"].ToString()));
-            }
+            //if (Barcode)
+            //{
+            //    if (BarcodePosition == 1)
+            //        page.Header.Layout(getPDFImageforBarcode(drRunning["LabNo"].ToString()));
+            //    else
+            //        page.Footer.Layout(getPDFImageforBarcode(drRunning["LabNo"].ToString()));
+            //}
 
 
 
@@ -1326,9 +1442,11 @@ namespace HISWEBAPI.Services.Implementations
             if (page.Footer != null && showDigitalSinature && Utility.getInt(drPrevious["IsReportApproved"]) == 1)
             {
 
-                if (!String.IsNullOrEmpty(drPrevious["DoctorSignFilePath"].ToString()))
+                string signPath = drPrevious["DoctorSignFilePath"].ToString().Replace("-", "\\");
+                // missing image file would make HiQPdf throw and fail the whole report -> skip it
+                if (!String.IsNullOrEmpty(signPath) && File.Exists(signPath))
                 {
-                    page.Footer.Layout(getPDFImage(XSignature, YSignature, drPrevious["DoctorSignFilePath"].ToString().Replace("-", "\\")));
+                    page.Footer.Layout(getPDFImage(XSignature, YSignature, signPath));
                 }
             }
 

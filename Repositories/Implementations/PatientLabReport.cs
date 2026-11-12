@@ -42,7 +42,7 @@ namespace HISWEBAPI.Repositories.Implementations
         public DataTable GetPatientInvestigationsForReportPrint(int branchId, int isHeaderPng, string patientInvestigationIdList, int userId, int dummyMode = 0)
         {
             return _sqlHelper.GetDataTable(
-                GetReportStoredProcedure("S_GetPatientInvestigationsForReportPrint", "S_GetPatientInvestigationsForReportPrintDummy", dummyMode),
+                GetReportStoredProcedure("S_GetPatientInvestigationsForReportPrint", "S_GetPatientInvestigationsForReportPrintDummy", dummyMode, "S_GetLabReportPrintPreviewInvestigations"),
                 CommandType.StoredProcedure,
                 new
                 {
@@ -56,7 +56,7 @@ namespace HISWEBAPI.Repositories.Implementations
         public DataTable GetPatientTabularReportForPrint(int patientInvestigationId, int dummyMode = 0)
         {
             return _sqlHelper.GetDataTable(
-                GetReportStoredProcedure("S_GetPatientTabularResultsForPrint", "S_GetPatientTabularResultsForPrintDummy", dummyMode),
+                GetReportStoredProcedure("S_GetPatientTabularResultsForPrint", "S_GetPatientTabularResultsForPrintDummy", dummyMode, "S_GetLabReportPrintPreviewTabularResults"),
                 CommandType.StoredProcedure,
                 new { @PTInvstId = patientInvestigationId }) ?? new DataTable();
         }
@@ -72,7 +72,7 @@ namespace HISWEBAPI.Repositories.Implementations
         public DataTable GetPatientFreeTextReportForPrint(int patientInvestigationId, int dummyMode = 0)
         {
             return _sqlHelper.GetDataTable(
-                GetReportStoredProcedure("S_GetPatientFreeTextResultsForPrint", "S_GetPatientFreeTextResultsForPrintDummy", dummyMode),
+                GetReportStoredProcedure("S_GetPatientFreeTextResultsForPrint", "S_GetPatientFreeTextResultsForPrintDummy", dummyMode, "S_GetLabReportPrintPreviewFreeTextResults"),
                 CommandType.StoredProcedure,
                 new { @PTInvstId = patientInvestigationId }) ?? new DataTable();
         }
@@ -93,9 +93,19 @@ namespace HISWEBAPI.Repositories.Implementations
                 new { @PTInvstId = patientInvestigationId }) ?? new DataTable();
         }
 
-        private static string GetReportStoredProcedure(string normalSP, string dummySP, int dummyMode)
+        /// <summary>DummyMode used by the print-setting preview API (dummy data from LabReportDummy* tables).</summary>
+        public const int PrintSettingPreviewMode = 3;
+
+        /// <summary>
+        /// dummyMode 2 -> investigation template preview SPs (…Dummy)
+        /// dummyMode 3 -> print-setting preview SPs (LabReportDummy* tables); falls back to the normal SP
+        ///               when no preview SP exists (e.g. header/footer, which must stay the real branch setup)
+        /// </summary>
+        private static string GetReportStoredProcedure(string normalSP, string dummySP, int dummyMode, string previewSP = null)
         {
-            return dummyMode == 2 ? dummySP : normalSP;
+            if (dummyMode == 2) return dummySP;
+            if (dummyMode == PrintSettingPreviewMode && !string.IsNullOrEmpty(previewSP)) return previewSP;
+            return normalSP;
         }
     }
 }

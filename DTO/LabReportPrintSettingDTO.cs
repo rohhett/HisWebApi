@@ -66,5 +66,50 @@ namespace HISWEBAPI.DTO
         public int? PrintDepartmentSeparate { get; set; }
         public int? SendEmail { get; set; }
         public int? SendWhatsAppMessage { get; set; }
+
+        // ── Report style ───────────────────────────────────────────────
+        // Fonts (sizes in px)
+        [RegularExpression(@"^[A-Za-z0-9 ,'\-]{1,100}$", ErrorMessage = "FontFamily contains invalid characters")]
+        public string? FontFamily { get; set; }
+        [Range(6, 40)] public int? BaseFontSize { get; set; }
+        [Range(6, 40)] public int? InvestigationNameFontSize { get; set; }
+        [Range(6, 40)] public int? TableHeaderFontSize { get; set; }
+        [Range(6, 40)] public int? MethodFontSize { get; set; }
+
+        // Colours: #RGB / #RRGGBB or a CSS colour name
+        [RegularExpression(ColorPattern, ErrorMessage = "ThemeColor must be #RRGGBB or a colour name")]
+        public string? ThemeColor { get; set; }
+        [RegularExpression(ColorPattern, ErrorMessage = "ThemeTextColor must be #RRGGBB or a colour name")]
+        public string? ThemeTextColor { get; set; }
+        [RegularExpression(ColorPattern, ErrorMessage = "TableHeaderBgColor must be #RRGGBB or a colour name")]
+        public string? TableHeaderBgColor { get; set; }
+        [RegularExpression(ColorPattern, ErrorMessage = "TableHeaderTextColor must be #RRGGBB or a colour name")]
+        public string? TableHeaderTextColor { get; set; }
+        [RegularExpression(ColorPattern, ErrorMessage = "AltRowColor must be #RRGGBB or a colour name")]
+        public string? AltRowColor { get; set; }
+        [RegularExpression(ColorPattern, ErrorMessage = "GridLineColor must be #RRGGBB or a colour name")]
+        public string? GridLineColor { get; set; }
+        [RegularExpression(ColorPattern, ErrorMessage = "AbnormalResultColor must be #RRGGBB or a colour name")]
+        public string? AbnormalResultColor { get; set; }
+
+        // Spacing (px): padding inside each result row / gap between investigations
+        [Range(0, 30)] public int? RowSpacing { get; set; }
+        [Range(0, 100)] public int? InvestigationSpacing { get; set; }
+
+        // Bold (0 / 1)
+        public int? ObservationNameBold { get; set; }
+        public int? ResultBoldIfAbnormal { get; set; }
+
+        // Show / hide (0 / 1)
+        public int? ShowInvestigationBand { get; set; }   // coloured bar with test name (new layout); 0 = old plain layout
+        public int? ShowSampleType { get; set; }          // "EDTA Whole Blood Sample" on the right of the bar
+        public int? ShowAccessionInfo { get; set; }       // Accession No / Collected / Received / Approved line
+        public int? ShowDepartmentName { get; set; }
+        public int? ShowMethodColumn { get; set; }
+        public int? ShowStripedRows { get; set; }
+        public int? ShowGridLines { get; set; }
+        public int? ShowEndOfReport { get; set; }
+
+        private const string ColorPattern = @"^(#[0-9A-Fa-f]{3}|#[0-9A-Fa-f]{6}|[A-Za-z]{3,20})$";
     }
 }

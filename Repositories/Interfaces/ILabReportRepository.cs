@@ -15,6 +15,6 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<object> SaveLabReportPrintSetting(SaveLabReportPrintSettingRequest request, AllGlobalValues globalValues);
 
         // Used internally by PatientInvestigationReportPdfService (branch value, falling back to default)
-        Dictionary<string, int?> GetEffectiveSetting(int branchId);
+        Dictionary<string, string> GetEffectiveSetting(int branchId, bool refreshCache = false);
     }
 }

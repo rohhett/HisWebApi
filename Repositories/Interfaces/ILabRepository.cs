@@ -147,5 +147,16 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
         ServiceResult<object> GetSampleJourneyByPatientInvestigationId(int patientInvestigationId);
 
         ServiceResult<object> GetPatientTabularResultEntryHistory(int patientId, int investigationId);
+        ServiceResult<SavePatientInvestigationTechnicalNoteResponse> SavePatientInvestigationTechnicalNote(
+    SavePatientInvestigationTechnicalNoteRequest request, AllGlobalValues globalValues);
+        ServiceResult<object> GetPatientInvestigationTechnicalNote(int investigationId);
+        ServiceResult<string> DeletePatientInvestigationTechnicalNote(int id);
+
+        ServiceResult<CreateUpdateInvestigationResultEntryCommentResponse> CreateUpdateInvestigationResultEntryComment(
+    CreateUpdateInvestigationResultEntryCommentRequest request, AllGlobalValues globalValues);
+
+        ServiceResult<object> GetInvestigationResultEntryCommentMaster(int? investigationId, int? isActive);
+
+
     }
 }
