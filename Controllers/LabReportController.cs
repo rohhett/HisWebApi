@@ -42,11 +42,26 @@ namespace HISWEBAPI.Controllers
                 return BadRequest(new { result = false, messageType = alert.Type, message = "PatientInvestigationIds is required" });
             }
 
+            // The ids are concatenated into dynamic SQL by S_GetPatientInvestigationsForReportPrint,
+            // so only a plain comma separated list of numbers is allowed (blocks SQL injection).
+            if (!TryNormalizeIdList(request.PatientInvestigationIds, out string ids))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "PatientInvestigationIds must be comma separated numbers" });
+            }
+            request.PatientInvestigationIds = ids;
+
             var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
 
 
             var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
             var pdfResult = _patientInvestigationReportPdfService.GenerateReport(request, globalValues, baseUrl);
+
+            if (!pdfResult.HasData)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                return NotFound(new { result = false, messageType = alert.Type, message = "No result-entered investigation found for the given ids" });
+            }
 
             Response.Headers["Content-Disposition"] = $"{(request.Download ? "attachment" : "inline")}; filename=\"{pdfResult.FileName}\"";
             return File(pdfResult.Content, "application/pdf");
@@ -79,9 +94,16 @@ namespace HISWEBAPI.Controllers
                 return BadRequest(new { result = false, messageType = alert.Type, message = "branchId must be greater than 0" });
             }
 
+            string ids = "0";
+            if (!string.IsNullOrWhiteSpace(investigationIds) && !TryNormalizeIdList(investigationIds, out ids))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "investigationIds must be comma separated numbers" });
+            }
+
             var request = new PatientInvestigationReportRequest
             {
-                PatientInvestigationIds = string.IsNullOrWhiteSpace(investigationIds) ? "0" : investigationIds.Trim(),
+                PatientInvestigationIds = ids,
                 BranchId = branchId,
                 IsHeaderPng = isHeaderPng,
                 Download = download,
@@ -92,8 +114,30 @@ namespace HISWEBAPI.Controllers
             var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.PathBase}";
             var pdfResult = _patientInvestigationReportPdfService.GenerateReport(request, globalValues, baseUrl);
 
+            if (!pdfResult.HasData)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                return NotFound(new { result = false, messageType = alert.Type, message = "No dummy investigation found for the given ids" });
+            }
+
             Response.Headers["Content-Disposition"] = $"{(download ? "attachment" : "inline")}; filename=\"PrintSettingPreview_Branch{branchId}.pdf\"";
             return File(pdfResult.Content, "application/pdf");
+        }
+
+        /// <summary>"12, 15,,18" -> "12,15,18". False when any part is not a positive whole number.</summary>
+        private static bool TryNormalizeIdList(string raw, out string normalized)
+        {
+            normalized = string.Empty;
+            var parts = new List<string>();
+            foreach (string part in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!long.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long id) || id < 0)
+                    return false;
+                parts.Add(id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            if (parts.Count == 0) return false;
+            normalized = string.Join(",", parts);
+            return true;
         }
 
         /// <summary>Saved values for a branch. applyDefaults=0 -> raw (null = not overridden) for input VALUE.</summary>

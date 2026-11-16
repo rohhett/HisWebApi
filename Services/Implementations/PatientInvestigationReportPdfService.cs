@@ -26,6 +26,7 @@ namespace HISWEBAPI.Services.Implementations
 
     public class PatientInvestigationReportPdfService : IPatientInvestigationReportPdfService
     {
+        private static readonly log4net.ILog _log = log4net.LogManager.GetLogger(typeof(PatientInvestigationReportPdfService));
 
         private const string HiQPdfSerialCode = "g8vq0tPn‐5c/q4fHi‐8fq7rbOj‐sqO3o7uy‐t6Owsq2y‐sa26urq6";
         private PatientInvestigationReportRequest _request = new();
@@ -293,7 +294,8 @@ namespace HISWEBAPI.Services.Implementations
             return new PatientInvestigationReportPdfResult
             {
                 Content = pdfBuffer,
-                FileName = $"{patientName}_LAB_Report_.pdf"
+                FileName = $"{patientName}_LAB_Report_.pdf",
+                HasData = dtPatientInvestigations != null && dtPatientInvestigations.Rows.Count > 0
             };
         }
 
@@ -513,14 +515,28 @@ namespace HISWEBAPI.Services.Implementations
                         DataTable dtTabularReport = _patientLabReport.GetPatientTabularReportForPrint(Utility.getInt(dr["PatientInvestigationId"]), dummyMode);
                         bool singleTestMode = hideInvtNameforSingleTest && dtTabularReport.Rows.Count == 1;
                         bool newLabOrPage = preLabNo != dr["LabNo"].ToString() || isPageChanged;
+                        bool firstResultRowPrinted = false;
+
+                        // every tabular test gets its own fixed-width table, so columns line up the same way for all tests
+                        sb.Append("<tr><td colspan='5' style='padding: 0;'><table class='invTable'>" + InvestigationColGroup());
 
                         if (ShowInvestigationBand)
                         {
-                            // New layout: coloured bar (test name + sample) -> accession line -> column header, for every investigation
+                            // New layout: coloured bar (test name + sample) -> accession line -> column header,
+                            // kept together as one block so it never splits across pages
                             if (!singleTestMode)
-                                AppendInvestigationTitle(sb, dr);
-
-                            if (!singleTestMode || !headerPrintedOnCurrentPage)
+                            {
+                                // the first result row goes inside the title block, so a title can never sit
+                                // alone at the bottom of a page with its results on the next page
+                                stripeIndex = 0;
+                                var firstRow = new StringBuilder();
+                                if (dtTabularReport.Rows.Count > 0)
+                                    AppendResultRow(firstRow, dtTabularReport.Rows[0], singleTestMode);
+                                AppendInvestigationTitle(sb, dr, withColumnHeader: true, firstResultRowHtml: firstRow.ToString());
+                                headerPrintedOnCurrentPage = true;
+                                firstResultRowPrinted = dtTabularReport.Rows.Count > 0;
+                            }
+                            else if (!headerPrintedOnCurrentPage)
                             {
                                 AppendColumnHeader(sb);
                                 headerPrintedOnCurrentPage = true;
@@ -543,10 +559,11 @@ namespace HISWEBAPI.Services.Implementations
                             }
                         }
 
-                        stripeIndex = 0;
-                        foreach (DataRow resultRow in dtTabularReport.Rows)
+                        if (!firstResultRowPrinted)
+                            stripeIndex = 0;
+                        for (int r = firstResultRowPrinted ? 1 : 0; r < dtTabularReport.Rows.Count; r++)
                         {
-                            AppendResultRow(sb, resultRow, singleTestMode);
+                            AppendResultRow(sb, dtTabularReport.Rows[r], singleTestMode);
                         }
 
 
@@ -565,17 +582,11 @@ namespace HISWEBAPI.Services.Implementations
 
                         if (!string.IsNullOrEmpty(dr["interpretation"].ToString()))
                         {
-                            string interpretationHtml = System.Net.WebUtility.HtmlDecode(dr["interpretation"].ToString());
-
-                            interpretationHtml = interpretationHtml
-                                // TABLE BORDER
-                                .Replace("<table", "<table style='border-collapse:collapse; width:100%; border:1px solid #333;'")
-
-                                // TD BORDER (important change here)
-                                .Replace("<td", "<td style='border:1px solid #333; padding:4px; text-align:center;'")
-
-                                // TH BORDER
-                                .Replace("<th", "<th style='border:1px solid #333; padding:4px; font-weight:bold; background:#f1f1f1; text-align:center;'");
+                            string interpretationHtml = StyleHtmlTables(
+                                System.Net.WebUtility.HtmlDecode(dr["interpretation"].ToString()),
+                                "border-collapse:collapse; width:100%; border:1px solid #333;",
+                                "border:1px solid #333; padding:4px; text-align:center;",
+                                "border:1px solid #333; padding:4px; font-weight:bold; background:#f1f1f1; text-align:center;");
 
                             sb.Append("<tr>");
                             sb.Append("<td colspan='5' style='font-size:14px; border:1px solid #333; padding:12px; background-color:#f8f9fa;'>");
@@ -602,6 +613,8 @@ namespace HISWEBAPI.Services.Implementations
                             sb.Append("<td colspan='4' style='padding: 5px; font-size: 12px; color: #666; '>Tests marked with NABL symbol are accredited by NABL vide Certificate no MC-2139</td> ");
                             sb.Append(" </tr>");
                         }
+
+                        sb.Append("</table></td></tr>");   // end of this test's table
                     }
 
                     else if (drRunning["ReportTypeId"].ToString() == "2") // Free Text Report
@@ -610,37 +623,24 @@ namespace HISWEBAPI.Services.Implementations
 
                         AppendInvestigationTitle(sb, dr);
 
-                        sb.Append(" <tr style='font-size: 14px;'> ");
-                        // sb.Append("<td colspan='5' style='padding-left:15px;' class='resultTd'>" + dtFreeTextReport.Rows[0]["ResultValue"].ToString() + "</td> ");
-                        // sb.Append(dtFreeTextReport.Rows[0]["ResultValue"].ToString()
-                        //        .Replace("<table", "<table style='border-collapse:collapse;border:1px solid #000;width:800px;'")
-                        //        .Replace("<td", "<td style='border:1px solid #000;padding:4px;'")
-                        //        .Replace("<th", "<th style='border:1px solid #000;padding:4px;'")
-                        //);
+                        // no result row -> print the title only instead of failing the whole report
+                        string resultValue = dtFreeTextReport.Rows.Count > 0 ? dtFreeTextReport.Rows[0]["ResultValue"]?.ToString() ?? "" : "";
 
-                        string resultValue = dtFreeTextReport.Rows[0]["ResultValue"]?.ToString() ?? "";
-
+                        // tables inside the result get borders; the result always sits inside a full-width cell
+                        // (it used to be appended straight into <tr>, which pushed it to the top of the page)
                         if (resultValue.IndexOf("<table", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
-                            sb.Append(
-                                resultValue
-                                    .Replace("<table", "<table style='border-collapse:collapse;border:1px solid #000;width:800px;'")
-                                    .Replace("<td", "<td style='border:1px solid #000;padding:4px;'")
-                                    .Replace("<th", "<th style='border:1px solid #000;padding:4px;'")
-                            );
-                        }
-                        else
-                        {
-                            sb.Append(
-                                "<td colspan='5' style='padding-left:15px;' class='resultTd'>" +
-                                resultValue +
-                                "</td>"
-                            );
+                            resultValue = StyleHtmlTables(resultValue,
+                                "border-collapse:collapse; border:1px solid #000; width:100%;",
+                                "border:1px solid #000; padding:4px;",
+                                "border:1px solid #000; padding:4px; font-weight:bold;");
                         }
 
-                        sb.Append(" </tr>");
+                        sb.Append("<tr><td colspan='5' style='padding-left:15px;' class='resultTd'>" + resultValue + "</td></tr>");
 
-                        string investigationComment = dtFreeTextReport.Rows[0]["InvestigationComment"]?.ToString() ?? "";
+                        string investigationComment = dtFreeTextReport.Rows.Count > 0 && dtFreeTextReport.Columns.Contains("InvestigationComment")
+                            ? dtFreeTextReport.Rows[0]["InvestigationComment"]?.ToString() ?? ""
+                            : "";
                         if (!string.IsNullOrEmpty(investigationComment))
                         {
                             AppendRemarks(sb, investigationComment);
@@ -757,9 +757,10 @@ namespace HISWEBAPI.Services.Implementations
 
                             if (cultureContent.Contains("<table"))
                             {
-                                cultureContent = cultureContent.Replace("<table", "<table style='width:100%; border:1px solid black; border-collapse:collapse;'");
-                                cultureContent = cultureContent.Replace("<td", "<td style='border:1px solid black; padding:5px;'");
-                                cultureContent = cultureContent.Replace("<th", "<th style='border:1px solid black; padding:5px; background-color:lightgray;'");
+                                cultureContent = StyleHtmlTables(cultureContent,
+                                    "width:100%; border:1px solid black; border-collapse:collapse;",
+                                    "border:1px solid black; padding:5px;",
+                                    "border:1px solid black; padding:5px; background-color:lightgray;");
                             }
 
                             sb.Append(" <tr> ");
@@ -1041,7 +1042,13 @@ namespace HISWEBAPI.Services.Implementations
             css.Append($".resultRow td {{ padding: {RowSpacing}px 8px; font-size: {BaseFontSize}px; {grid} }} ");
             css.Append(".resultRow td.lastCell { border-right: none; } ");
             css.Append($".resultRow td.abnormal {{ color: {AbnormalResultColor}; }} ");
-            css.Append($".resultRow td.observation-method, .observation-method {{ font-size: {MethodFontSize}px; white-space: nowrap; }} ");
+            // fixed columns: wrap long methods instead of pushing the table past the page edge
+            css.Append($".resultRow td.observation-method, .observation-method {{ font-size: {MethodFontSize}px; }} ");
+            css.Append(".invTable { width: 100%; table-layout: fixed; border-collapse: collapse; } ");
+            css.Append(".invTable td { word-wrap: break-word; } ");
+            css.Append(".colHeader td { white-space: nowrap; overflow: hidden; } ");
+            // never split a single result row or the test title block across two pages
+            css.Append("tr.keepTogether, tr.resultRow, tr.colHeader { page-break-inside: avoid; } ");
             css.Append(".obsComment td { padding-left: 20px; padding-bottom: 5px; font-style: italic; color: #555; } ");
             css.Append($".resultTable {{ font-size: {BaseFontSize}px; line-height: {BaseFontSize + 2}px; }} ");
             css.Append(".resultTd { padding: 2px; } ");
@@ -1081,8 +1088,12 @@ namespace HISWEBAPI.Services.Implementations
             return $"<img src='{path}' style='height: {height}px; margin-left: 10px; margin-right: 10px; vertical-align: middle;' />";
         }
 
-        /// <summary>Test name: coloured bar (+ accession line) when ShowInvestigationBand, otherwise the old plain bold row.</summary>
-        private void AppendInvestigationTitle(StringBuilder sb, DataRow dr)
+        /// <summary>
+        /// Test name: coloured bar (+ accession line, + optional column header) when ShowInvestigationBand,
+        /// otherwise the old plain bold row. In the bar layout everything is one row with
+        /// page-break-inside: avoid, so the title block never splits from its column header.
+        /// </summary>
+        private void AppendInvestigationTitle(StringBuilder sb, DataRow dr, bool withColumnHeader = false, string firstResultRowHtml = "")
         {
             string name = NablImageHtml(25) + dr["InvestigationName"].ToString();
 
@@ -1100,18 +1111,29 @@ namespace HISWEBAPI.Services.Implementations
                     sample += " Sample";
             }
 
-            sb.Append($"<tr><td colspan='5' style='padding: {InvestigationSpacing}px 0 0 0;'>");
+            sb.Append($"<tr class='keepTogether'><td colspan='5' style='padding: {InvestigationSpacing}px 0 0 0;'>");
             sb.Append("<table class='invBand'><tr>");
             sb.Append("<td class='invName'>" + name + "</td>");
             sb.Append("<td class='invSample'>" + sample + "</td>");
-            sb.Append("</tr></table></td></tr>");
+            sb.Append("</tr></table>");
 
             if (ShowAccessionInfo)
-                AppendAccessionInfo(sb, dr);
+                sb.Append(AccessionInfoTable(dr));
+
+            if (withColumnHeader)
+            {
+                // same fixed column widths as the result table below, so the columns line up
+                sb.Append("<table class='invTable'>" + InvestigationColGroup());
+                AppendColumnHeader(sb);
+                sb.Append(firstResultRowHtml);
+                sb.Append("</table>");
+            }
+
+            sb.Append("</td></tr>");
         }
 
         /// <summary>Accession No | Collected On | Received On | Approved On (empty values are skipped).</summary>
-        private void AppendAccessionInfo(StringBuilder sb, DataRow dr)
+        private string AccessionInfoTable(DataRow dr)
         {
             var cells = new StringBuilder();
             void Add(string label, string column)
@@ -1127,26 +1149,46 @@ namespace HISWEBAPI.Services.Implementations
             Add("Received On", "InvDeptRecDateTime");
             Add("Approved On", "InvReportApprovalDateTime");
 
-            if (cells.Length == 0) return;
-            sb.Append("<tr><td colspan='5' style='padding: 0;'><table class='accInfo'><tr>" + cells + "</tr></table></td></tr>");
+            return cells.Length == 0 ? string.Empty : "<table class='accInfo'><tr>" + cells + "</tr></table>";
+        }
+
+        /// <summary>Fixed column widths shared by the column header and the result rows of a test.</summary>
+        private static string InvestigationColGroup()
+        {
+            return "<colgroup><col style='width: 30%;'/><col style='width: 11%;'/><col style='width: 12%;'/>"
+                 + "<col style='width: 24%;'/><col style='width: 23%;'/></colgroup>";
         }
 
         private void AppendColumnHeader(StringBuilder sb)
         {
             sb.Append("<tr class='colHeader'>");
-            sb.Append("<td style='width: 34%;'>Observation</td>");
-            sb.Append("<td style='width: 13%;'>Result</td>");
-            sb.Append("<td style='width: 12%;'>Unit</td>");
+            sb.Append("<td>Observation</td>");
+            sb.Append("<td>Result</td>");
+            sb.Append("<td>Unit</td>");
             if (ShowMethodColumn)
             {
-                sb.Append("<td style='width: 22%;'>Biological Ref. Interval</td>");
-                sb.Append("<td style='width: 19%;'>Method</td>");
+                sb.Append("<td>Biological Ref. Interval</td>");
+                sb.Append("<td>Method</td>");
             }
             else
             {
-                sb.Append("<td colspan='2' style='width: 41%;'>Biological Ref. Interval</td>");
+                sb.Append("<td colspan='2'>Biological Ref. Interval</td>");
             }
             sb.Append("</tr>");
+        }
+
+        /// <summary>
+        /// Adds border styles to &lt;table&gt;, &lt;td&gt; and &lt;th&gt; tags of stored HTML.
+        /// Uses whole-tag matching, so &lt;thead&gt; / &lt;tbody&gt; are not broken (plain Replace("&lt;th") turned &lt;thead&gt; into garbage).
+        /// </summary>
+        private static string StyleHtmlTables(string html, string tableStyle, string cellStyle, string headCellStyle)
+        {
+            if (string.IsNullOrEmpty(html)) return html;
+            var opts = System.Text.RegularExpressions.RegexOptions.IgnoreCase;
+            html = System.Text.RegularExpressions.Regex.Replace(html, @"<table\b", "<table style=\"" + tableStyle + "\"", opts);
+            html = System.Text.RegularExpressions.Regex.Replace(html, @"<td\b", "<td style=\"" + cellStyle + "\"", opts);
+            html = System.Text.RegularExpressions.Regex.Replace(html, @"<th\b", "<th style=\"" + headCellStyle + "\"", opts);
+            return html;
         }
 
         private static bool IsAbnormal(DataRow r)
@@ -1338,14 +1380,14 @@ namespace HISWEBAPI.Services.Implementations
                 page.Header.Layout(borderRectangle);
             }
 
-            if (!String.IsNullOrEmpty(drRunning["LetterHeadFilePath"].ToString()) && isHeaderPNG == 1
-                && File.Exists(drRunning["LetterHeadFilePath"].ToString().Replace("-", "\\")))
+            string letterHeadPath = isHeaderPNG == 1 ? ResolveImagePath(drRunning["LetterHeadFilePath"]?.ToString()) : string.Empty;
+            if (!String.IsNullOrEmpty(letterHeadPath))
             {
                 page.Layout(getPDFImageWaterMark(
                     -200 + float.Parse(drRunning["PaddingLeft"].ToString()),
                     -410 + float.Parse(drRunning["PaddingTop"].ToString()),
                     385 + float.Parse(drRunning["PaddingRight"].ToString()),
-                    drRunning["LetterHeadFilePath"].ToString().Replace("-", "\\")
+                    letterHeadPath
                 ));
             }
         }
@@ -1376,13 +1418,31 @@ namespace HISWEBAPI.Services.Implementations
                     page.Footer.Layout(getPDFImageforQRcode(XQRcode, YQRcode, downloadUrl));
             }
 
-            //if (Barcode)
-            //{
-            //    if (BarcodePosition == 1)
-            //        page.Header.Layout(getPDFImageforBarcode(drRunning["LabNo"].ToString()));
-            //    else
-            //        page.Footer.Layout(getPDFImageforBarcode(drRunning["LabNo"].ToString()));
-            //}
+            // Barcode (Code 128 of the Lab No.) - settings: IsActiveBarcode, BarcodePosition (1 = header, else footer),
+            // XBarcode / YBarcode, BarcodeWidth / BarcodeHeight, RotateBarcode90Degree (LabReportPrintSettingMaster)
+            if (Barcode)
+            {
+                string labNo = drRunning != null && drRunning.Table.Columns.Contains("LabNo")
+                    ? drRunning["LabNo"]?.ToString()?.Trim() ?? string.Empty
+                    : string.Empty;
+
+                if (!string.IsNullOrEmpty(labNo))
+                {
+                    try
+                    {
+                        var barcodeImage = getPDFImageforBarcode(labNo);
+                        if (BarcodePosition == 1)
+                            page.Header.Layout(barcodeImage);
+                        else
+                            page.Footer.Layout(barcodeImage);
+                    }
+                    catch (Exception ex)
+                    {
+                        // e.g. width too small for the Lab No. or a character Code 128 cannot encode -> report still prints
+                        _log.Warn($"Barcode not printed for LabNo={labNo}: {ex.Message}");
+                    }
+                }
+            }
 
 
 
@@ -1420,7 +1480,7 @@ namespace HISWEBAPI.Services.Implementations
                 page.Footer.Layout(page1SaveByText);
 
                 // SaveBy
-                PdfText page1SaveBy = new PdfText(200, FooterHeight - 10, Utility.getString(drRunning["InvResultEntryBy"]), pageNumberingFont);
+                PdfText page1SaveBy = new PdfText(200, FooterHeight - 10, Utility.getString(drPrevious["InvResultEntryBy"]), pageNumberingFont);
                 page1SaveBy.ForeColor = System.Drawing.Color.Black;
                 page.Footer.Layout(page1SaveBy);
             }
@@ -1433,7 +1493,7 @@ namespace HISWEBAPI.Services.Implementations
                 page.Footer.Layout(page1PrintByText);
 
                 //PrintBy
-                PdfText page1PrintBy = new PdfText(400, FooterHeight - 10, Utility.getString(drRunning["InvResultPrintBy"]), pageNumberingFont);
+                PdfText page1PrintBy = new PdfText(400, FooterHeight - 10, Utility.getString(drPrevious["InvResultPrintBy"]), pageNumberingFont);
                 page1PrintBy.ForeColor = System.Drawing.Color.Black;
                 page.Footer.Layout(page1PrintBy);
             }
@@ -1441,13 +1501,13 @@ namespace HISWEBAPI.Services.Implementations
             //Set Digital Sinature 
             if (page.Footer != null && showDigitalSinature && Utility.getInt(drPrevious["IsReportApproved"]) == 1)
             {
-
-                string signPath = drPrevious["DoctorSignFilePath"].ToString().Replace("-", "\\");
-                // missing image file would make HiQPdf throw and fail the whole report -> skip it
-                if (!String.IsNullOrEmpty(signPath) && File.Exists(signPath))
-                {
+                string storedSignPath = drPrevious["DoctorSignFilePath"]?.ToString() ?? string.Empty;
+                string signPath = ResolveImagePath(storedSignPath);
+                // missing image file would make HiQPdf throw and fail the whole report -> skip it (and say why)
+                if (!String.IsNullOrEmpty(signPath))
                     page.Footer.Layout(getPDFImage(XSignature, YSignature, signPath));
-                }
+                else if (!String.IsNullOrEmpty(storedSignPath) && page.Index == 0)
+                    _log.Warn($"Doctor signature not printed: file not found '{storedSignPath}'");
             }
 
 
@@ -1472,6 +1532,20 @@ namespace HISWEBAPI.Services.Implementations
                 string columnName = dtPatientInvestigations.Columns[i].ColumnName;
                 patientFooterString = patientFooterString.Replace("##" + columnName + "##", drPrevious[columnName].ToString());
             }
+        }
+
+        /// <summary>
+        /// Stored image path -> existing file, or "" when there is none.
+        /// The path is tried as stored first (e.g. "D:/DMS/API/DoctorSignatures/x.png"); the old
+        /// "-" -> "\" conversion is only a fallback, because it breaks file names that contain a hyphen.
+        /// </summary>
+        private static string ResolveImagePath(string stored)
+        {
+            if (String.IsNullOrWhiteSpace(stored)) return string.Empty;
+            string path = stored.Trim();
+            if (File.Exists(path)) return path;
+            string legacy = path.Replace("-", "\\");
+            return File.Exists(legacy) ? legacy : string.Empty;
         }
 
         private PdfImage getPDFImage(float X, float Y, string SignImg)
@@ -1563,7 +1637,8 @@ namespace HISWEBAPI.Services.Implementations
 
         private string GenerateReportDownloadUrl()
         {
-            return $"{_baseUrl}/api/Lab/printPatientInvestigationReportDownload?PatientInvestigationIds={Uri.EscapeDataString(patientInvestigationIds)}&BranchId={branchId}&UserId={userId}&IsHeaderPng={isHeaderPNG}&Download=true&DummyMode={dummyMode}&Contacts={Uri.EscapeDataString(patientContacts)}&EmailIds={Uri.EscapeDataString(patientEmailIds)}";
+            // QR -> existing print endpoint (LabReportController). No contacts / e-mails in the URL (they would be printed into the QR).
+            return $"{_baseUrl}/api/Lab/printPatientInvestigationReport?PatientInvestigationIds={Uri.EscapeDataString(patientInvestigationIds)}&BranchId={branchId}&IsHeaderPng={isHeaderPNG}&Download=true&DummyMode={dummyMode}";
         }
 
 

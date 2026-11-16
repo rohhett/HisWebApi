@@ -38,11 +38,19 @@ namespace HISWEBAPI.Repositories.Implementations
         }
 
         // ── shared: raw SP result -> single dictionary (no model mapping), cached ─────────
+        // Redis problems never block reading the settings: on any cache error we read from the DB.
         private Dictionary<string, object> LoadRow(string cacheKey, string spName, object parameters)
         {
-            var cached = _distributedCache.GetString(cacheKey);
-            if (!string.IsNullOrEmpty(cached))
-                return JsonSerializer.Deserialize<Dictionary<string, object>>(cached);
+            try
+            {
+                var cached = _distributedCache.GetString(cacheKey);
+                if (!string.IsNullOrEmpty(cached))
+                    return JsonSerializer.Deserialize<Dictionary<string, object>>(cached);
+            }
+            catch (Exception ex)
+            {
+                _log.Warn($"Print setting cache read failed for {cacheKey}, reading from DB. {ex.Message}");
+            }
 
             var dt = parameters == null
                 ? _sqlHelper.GetDataTable(spName, CommandType.StoredProcedure)
@@ -54,8 +62,15 @@ namespace HISWEBAPI.Repositories.Implementations
             var dict = dt.Columns.Cast<DataColumn>()
                 .ToDictionary(c => c.ColumnName, c => row[c] == DBNull.Value ? null : row[c]);
 
-            _distributedCache.SetString(cacheKey, JsonSerializer.Serialize(dict),
-                new DistributedCacheEntryOptions { AbsoluteExpiration = null, SlidingExpiration = null });
+            try
+            {
+                _distributedCache.SetString(cacheKey, JsonSerializer.Serialize(dict),
+                    new DistributedCacheEntryOptions { AbsoluteExpiration = null, SlidingExpiration = null });
+            }
+            catch (Exception ex)
+            {
+                _log.Warn($"Print setting cache write failed for {cacheKey}. {ex.Message}");
+            }
             return dict;
         }
 
@@ -161,7 +176,10 @@ namespace HISWEBAPI.Repositories.Implementations
             try
             {
                 if (refreshCache)
-                    _distributedCache.Remove($"{CACHE_PREFIX}{branchId}_1");
+                {
+                    try { _distributedCache.Remove($"{CACHE_PREFIX}{branchId}_1"); }
+                    catch (Exception ex) { _log.Warn($"Print setting cache remove failed. {ex.Message}"); }
+                }
 
                 var row = LoadRow($"{CACHE_PREFIX}{branchId}_1", "S_GetLabReportPrintSetting",
                     new { @BranchId = branchId, @ApplyDefaults = true });

@@ -65,7 +65,19 @@ namespace HISWEBAPI.Data.Helpers
                 cmd.CommandType = commandType;
                 CreateCmdParameters(cmd, inParameters, outParameters);
 
-                return cmd.ExecuteNonQuery();
+                int rowsAffected = cmd.ExecuteNonQuery();
+
+                if (outParameters == null)
+                    return rowsAffected;
+
+                // Return the SP's @Result output (new/updated id, or negative status code like -1 = duplicate).
+                // Fall back to rows affected when @Result is NULL/non-numeric (e.g. SCOPE_IDENTITY() after a DELETE),
+                // which preserves the previous behaviour for those procedures.
+                var outValue = cmd.Parameters["@Result"].Value;
+                if (outValue != null && outValue != DBNull.Value && int.TryParse(outValue.ToString(), out int resultValue))
+                    return resultValue;
+
+                return rowsAffected;
             }
             finally
             {

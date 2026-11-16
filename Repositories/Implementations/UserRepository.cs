@@ -30,6 +30,8 @@ namespace HISWEBAPI.Repositories.Implementations
         private readonly JwtSettings _jwtSettings;
         private readonly IDistributedCache _distributedCache;
         private static readonly ILog _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+        private readonly int _maxFailedAttempts;
+        private readonly int _lockoutMinutes;
 
         public UserRepository(
             ICustomSqlHelper sqlHelper,
@@ -38,8 +40,12 @@ namespace HISWEBAPI.Repositories.Implementations
             IEmailService emailService,
             IJwtService jwtService,
             IOptions<JwtSettings> jwtSettings,
-            IDistributedCache distributedCache)
+            IDistributedCache distributedCache,
+            IConfiguration configuration)
         {
+            // login lockout settings (appsettings "LoginLockout"), defaults 5 attempts / 15 minutes
+            _maxFailedAttempts = Math.Max(1, configuration.GetValue("LoginLockout:MaxFailedAttempts", 5));
+            _lockoutMinutes = Math.Max(1, configuration.GetValue("LoginLockout:LockoutMinutes", 15));
             _sqlHelper = sqlHelper;
             _messageService = messageService;
             _smsService = smsService;
@@ -50,10 +56,113 @@ namespace HISWEBAPI.Repositories.Implementations
 
         }
 
-        public ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request)
+        #region Login lockout (wrong password limit, kept in Redis)
+
+        private sealed class LoginLockState
+        {
+            public int FailedCount { get; set; }
+            public DateTime FirstFailedUtc { get; set; }
+            public DateTime? LockedUntilUtc { get; set; }
+        }
+
+        private static string LoginLockKey(string userName) =>
+            "_LoginLockout_" + (userName ?? "").Trim().ToLowerInvariant();
+
+        /// <summary>Current failed-attempt state of a user name; null when none or Redis is not reachable.</summary>
+        private LoginLockState? GetLoginLockState(string userName)
         {
             try
             {
+                string? json = _distributedCache.GetString(LoginLockKey(userName));
+                return string.IsNullOrEmpty(json) ? null : JsonSerializer.Deserialize<LoginLockState>(json);
+            }
+            catch (Exception ex)
+            {
+                // Redis down -> login keeps working without the limit
+                _log.Error($"Login lockout state could not be read for UserName={userName}: {ex.Message}");
+                return null;
+            }
+        }
+
+        private void ClearLoginLockState(string userName)
+        {
+            try { _distributedCache.Remove(LoginLockKey(userName)); }
+            catch (Exception ex) { _log.Error($"Login lockout state could not be cleared for UserName={userName}: {ex.Message}"); }
+        }
+
+        /// <summary>
+        /// Counts one wrong login. Failed tries older than the lockout window stop counting;
+        /// reaching the limit blocks the user name for LockoutMinutes.
+        /// </summary>
+        private ServiceResult<UserLoginResponseData> LoginFailedResult(string userName, string? ipAddress, string alertType, string alertMessage)
+        {
+            try
+            {
+                DateTime now = DateTime.UtcNow;
+                var window = TimeSpan.FromMinutes(_lockoutMinutes);
+                var state = GetLoginLockState(userName);
+
+                if (state == null || state.FirstFailedUtc.Add(window) <= now ||
+                    (state.LockedUntilUtc.HasValue && state.LockedUntilUtc <= now))
+                    state = new LoginLockState { FailedCount = 0, FirstFailedUtc = now };
+
+                state.FailedCount++;
+                DateTime expiresAt;
+
+                if (state.FailedCount >= _maxFailedAttempts)
+                {
+                    state.LockedUntilUtc = now.Add(window);
+                    expiresAt = state.LockedUntilUtc.Value;
+                    _log.Warn($"Login locked for {_lockoutMinutes} min: UserName={userName}, IP={ipAddress}, failedAttempts={state.FailedCount}");
+                }
+                else
+                {
+                    expiresAt = state.FirstFailedUtc.Add(window);
+                    _log.Warn($"Failed login {state.FailedCount}/{_maxFailedAttempts}: UserName={userName}, IP={ipAddress}");
+                }
+
+                _distributedCache.SetString(LoginLockKey(userName), JsonSerializer.Serialize(state),
+                    new DistributedCacheEntryOptions { AbsoluteExpiration = new DateTimeOffset(expiresAt, TimeSpan.Zero) });
+
+                if (state.LockedUntilUtc.HasValue)
+                    return ServiceResult<UserLoginResponseData>.Failure(
+                        "Error",
+                        $"Too many failed login attempts. Your login is blocked for {_lockoutMinutes} minute(s).",
+                        429
+                    );
+
+                int left = _maxFailedAttempts - state.FailedCount;
+                if (left == 1)
+                    alertMessage = $"{alertMessage} {left} attempt(s) left before the login is blocked for {_lockoutMinutes} minute(s).";
+            }
+            catch (Exception ex)
+            {
+                // Redis down -> plain "invalid credentials", no limit
+                _log.Error($"Login lockout state could not be saved for UserName={userName}: {ex.Message}");
+            }
+
+            return ServiceResult<UserLoginResponseData>.Failure(alertType, alertMessage, 401);
+        }
+
+        #endregion
+
+        public ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request, string? ipAddress = null)
+        {
+            try
+            {
+                // blocked after too many wrong passwords -> refuse even a correct password until the block ends
+                var lockState = GetLoginLockState(request.UserName);
+                if (lockState?.LockedUntilUtc is DateTime lockedUntil && lockedUntil > DateTime.UtcNow)
+                {
+                    int minutesLeft = (int)Math.Ceiling((lockedUntil - DateTime.UtcNow).TotalMinutes);
+                    _log.Warn($"Login blocked (locked out) for UserName={request.UserName}, IP={ipAddress}, minutesLeft={minutesLeft}");
+                    return ServiceResult<UserLoginResponseData>.Failure(
+                        "Error",
+                        $"Too many failed login attempts. Try again in {minutesLeft} minute(s).",
+                        429
+                    );
+                }
+
                 var dataTable = _sqlHelper.GetDataTable("S_UserLogin", CommandType.StoredProcedure, new
                 {
                     BranchId = request.BranchId,
@@ -64,11 +173,8 @@ namespace HISWEBAPI.Repositories.Implementations
                 {
                     var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_CREDENTIALS");
                     _log.Warn($"Invalid credentials for UserName={request.UserName}");
-                    return ServiceResult<UserLoginResponseData>.Failure(
-                        alert.Type,
-                        alert.Message,
-                        401
-                    );
+                    // unknown user names count too, so the lockout does not reveal which names exist
+                    return LoginFailedResult(request.UserName, ipAddress, alert.Type, alert.Message);
                 }
 
                 DataRow userRow = dataTable.Rows[0];
@@ -79,12 +185,11 @@ namespace HISWEBAPI.Repositories.Implementations
                 {
                     var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_CREDENTIALS");
                     _log.Warn($"Invalid password for UserName={request.UserName}");
-                    return ServiceResult<UserLoginResponseData>.Failure(
-                        alert.Type,
-                        alert.Message,
-                        401
-                    );
+                    return LoginFailedResult(request.UserName, ipAddress, alert.Type, alert.Message);
                 }
+
+                // correct password -> start counting from zero again
+                ClearLoginLockState(request.UserName);
 
                 int userId = Convert.ToInt32(userRow["Id"]);
                 string name = userRow["Name"]?.ToString() ?? "";

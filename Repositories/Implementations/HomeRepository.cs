@@ -656,6 +656,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     case 1:
                         var alert = _messageService.GetMessageAndTypeByAlertCode("OTP_VERIFIED"); // was "MOBILE_VERIFIED"
                         _log.Info($"Mobile number verified successfully. MobileNumber={request.MobileNumber}");
+                        _distributedCache.Remove("_VendorMaster_All"); // vendor list shows contact verification status
                         return ServiceResult<string>.Success("Mobile number verified successfully", alert.Type, alert.Message, 200);
 
                     case -1:
@@ -746,6 +747,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     case 1:
                         var alert = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VERIFIED"); // was "EMAIL_VERIFIED"
                         _log.Info($"Email verified successfully. Email={request.Email}");
+                        _distributedCache.Remove("_VendorMaster_All"); // vendor list shows email verification status
                         return ServiceResult<string>.Success("Email verified successfully", alert.Type, alert.Message, 200);
 
                     case -1:

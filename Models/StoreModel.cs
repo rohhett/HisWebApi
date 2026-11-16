@@ -17,11 +17,377 @@
         public int? DistrictId { get; set; }
         public int? CityId { get; set; }
         public int? Pincode { get; set; }
+        public int? CreditDays { get; set; }
+        /// <summary>1 when the current contact number / email was verified by OTP (Home/verify*VerificationOtp)</summary>
+        public int IsContactVerified { get; set; }
+        public int IsEmailVerified { get; set; }
         public string MappingBranch { get; set; }
         public int IsActive { get; set; }
         public string CreatedBy { get; set; }
         public string CreatedOn { get; set; }
         public string LastModifiedBy { get; set; }
         public string LastModifiedOn { get; set; }
+    }
+
+    public class PurchaseUnitModel
+    {
+        public int PurchaseUnitId { get; set; }
+        public string PurchaseUnitName { get; set; }
+        public int IsActive { get; set; }
+        public int ItemCount { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class SaleUnitModel
+    {
+        public int SaleUnitId { get; set; }
+        public string SaleUnitName { get; set; }
+        public int IsActive { get; set; }
+        public int ItemCount { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class DosageFormModel
+    {
+        public int DosageFormId { get; set; }
+        public string DosageFormName { get; set; }
+        public string Description { get; set; }
+        public int IsActive { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class StoreItemListModel
+    {
+        public int ServiceItemId { get; set; }
+        public int CategoryId { get; set; }
+        public string StoreType { get; set; }
+        public string SubGroup { get; set; }
+        public string SubSubGroup { get; set; }
+        public string Code { get; set; }
+        public string Name { get; set; }
+        public string SaltName { get; set; }
+        public string Strength { get; set; }
+        public string SnomedCode { get; set; }
+        public string ManufacturerName { get; set; }
+        public string DosageFormName { get; set; }
+        public string PackSize { get; set; }
+        public string SaleUnitName { get; set; }
+        public int Packing { get; set; }
+        public string HsnCode { get; set; }
+        public decimal? GstPer { get; set; }
+        public string DrugSchedule { get; set; }
+        public string RackCode { get; set; }
+        public string ReorderLevel { get; set; }
+        public int IsColdChain { get; set; }
+        public int IsActive { get; set; }
+    }
+
+    public class StoreItemDetailsModel
+    {
+        public int ServiceItemId { get; set; }
+        public int CategoryId { get; set; }
+        public int SubCategoryId { get; set; }
+        public int SubSubCategoryId { get; set; }
+        public string Name { get; set; }
+        public string Code { get; set; }
+        public int DescriptionId { get; set; }
+        public string SaltName { get; set; }
+        public string Strength { get; set; }
+        public string SnomedCode { get; set; }
+        public int ManufacturerId { get; set; }
+        public int DosageFormId { get; set; }
+        public int DrugCategoryId { get; set; }
+        public string Barcode { get; set; }
+        public string PackSize { get; set; }
+        public int PurchaseUnitId { get; set; }
+        public int SaleUnitId { get; set; }
+        public int Packing { get; set; }
+        public string HsnCode { get; set; }
+        public string CommodityCode { get; set; }
+        public decimal? GstPer { get; set; }
+        public string DrugSchedule { get; set; }
+        public int RackId { get; set; }
+        public int IsColdChain { get; set; }
+        public int Expirable { get; set; }
+        public string VedType { get; set; }
+        public int? MinLevel { get; set; }
+        public int? ReorderLevel { get; set; }
+        public int? MaxLevel { get; set; }
+        public int DoctorId { get; set; }
+        public int IsKitTypeItem { get; set; }
+        public int IsBagTypeItem { get; set; }
+        public int IsActive { get; set; }
+        public int DefaultStoreRoleId { get; set; }
+        public int ExpiryAlertDays { get; set; }
+        public int IsFEFOIssue { get; set; }
+        public int IsBatchMandatory { get; set; }
+        public int AllowExpiredIssue { get; set; }
+        public string ItemClass { get; set; }
+        public string StorageCondition { get; set; }
+        public int IsSterile { get; set; }
+        public int IsSingleUse { get; set; }
+        public int IsRecallItem { get; set; }
+        public int IsRestrictedItem { get; set; }
+        public int IsTrackBatch { get; set; }
+        public int IsBarcodeApplicable { get; set; }
+        public int IsStockable { get; set; }
+        public int IsCapitalItem { get; set; }
+        public int IsHighRisk { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class RackMasterModel
+    {
+        public int RackId { get; set; }
+        public string RackCode { get; set; }
+        public string Location { get; set; }
+        public int IsActive { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class DrugCategoryModel
+    {
+        public int DrugId { get; set; }
+        public string DrugName { get; set; }
+        public int IsNarcoticDrug { get; set; }
+        public string ColorPicker { get; set; }
+        public int IsActive { get; set; }
+        public int MedicineCount { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class TaxPercentageModel
+    {
+        public int TaxId { get; set; }
+        public string Description { get; set; }
+        public decimal TaxValue { get; set; }
+        public decimal CGST { get; set; }
+        public decimal SGST { get; set; }
+        public int IsActive { get; set; }
+        public int MedicineCount { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class SaltNameMasterModel
+    {
+        public int SaltNameId { get; set; }
+        public string SaltName { get; set; }
+        public string TherapeuticClass { get; set; }
+        public string SNOMEDCode { get; set; }
+        public int IsActive { get; set; }
+        public int MedicineCount { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    public class ManufacturerMasterModel
+    {
+        public int ManufacturerId { get; set; }
+        public string ManufacturerName { get; set; }
+        public string ShortCode { get; set; }
+        public string CityCountry { get; set; }
+        public int IsActive { get; set; }
+        public int MedicineCount { get; set; }
+        public string CreatedBy { get; set; }
+        public string CreatedOn { get; set; }
+        public string LastModifiedBy { get; set; }
+        public string LastModifiedOn { get; set; }
+    }
+
+    // ================= Stock Receiving (GRN) =================
+
+    public class StockReceivingListModel
+    {
+        public int ReceivingId { get; set; }
+        public string ReceivingNo { get; set; } = string.Empty;
+        public DateTime GrnDate { get; set; }
+        public string StoreType { get; set; } = string.Empty;
+        public int RoleId { get; set; }
+        public string StoreName { get; set; } = string.Empty;
+        public int VendorId { get; set; }
+        public string VendorName { get; set; } = string.Empty;
+        public string InvoiceNo { get; set; } = string.Empty;
+        public DateTime? InvoiceDate { get; set; }
+        public string ChallanNo { get; set; } = string.Empty;
+        public DateTime? ChallanDate { get; set; }
+        public decimal NetAmount { get; set; }
+        public int StatusId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public int ItemCount { get; set; }
+        public string CreatedByName { get; set; } = string.Empty;
+        public DateTime? CreatedOn { get; set; }
+    }
+
+    public class StockReceivingDetailsModel
+    {
+        public int ReceivingId { get; set; }
+        public int BranchId { get; set; }
+        public int RoleId { get; set; }
+        public string StoreName { get; set; } = string.Empty;
+        public string StoreType { get; set; } = string.Empty;
+        public int VendorId { get; set; }
+        public string VendorName { get; set; } = string.Empty;
+        public string GstinNo { get; set; } = string.Empty;
+        public string DlNo { get; set; } = string.Empty;
+        public int TypeId { get; set; }
+        public string Type { get; set; } = string.Empty;
+        public string ReceivingNo { get; set; } = string.Empty;
+        public int ReceivingAgainstId { get; set; }
+        public string InvoiceNo { get; set; } = string.Empty;
+        public DateTime? InvoiceDate { get; set; }
+        public string ChallanNo { get; set; } = string.Empty;
+        public DateTime? ChallanDate { get; set; }
+        public string GstType { get; set; } = string.Empty;
+        public DateTime GrnDate { get; set; }
+        public string PaymentMode { get; set; } = string.Empty;
+        public string Remarks { get; set; } = string.Empty;
+        public string AmendmentRemark { get; set; } = string.Empty;
+        public decimal FreightCharges { get; set; }
+        public decimal GrossAmount { get; set; }
+        public decimal DiscountPercentage { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal TaxableAmount { get; set; }
+        public decimal GstAmount { get; set; }
+        public decimal NetAmount { get; set; }
+        public decimal RoundOff { get; set; }
+        public int StatusId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string CancelReason { get; set; } = string.Empty;
+        public DateTime? CancelledOn { get; set; }
+        public DateTime? PostedOn { get; set; }
+        public bool IsIssued { get; set; }
+        public List<StockReceivingLineModel> Items { get; set; } = new();
+    }
+
+    public class StockReceivingLineModel
+    {
+        public int StockId { get; set; }
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string ItemCode { get; set; } = string.Empty;
+        public int Expirable { get; set; }
+        public decimal Qty { get; set; }
+        public decimal FreeQty { get; set; }
+        public int Packing { get; set; }
+        public int Deal1 { get; set; }
+        public int Deal2 { get; set; }
+        public string BatchNo { get; set; } = string.Empty;
+        /// <summary>yyyy-MM</summary>
+        public string Expiry { get; set; } = string.Empty;
+        public string HsnCode { get; set; } = string.Empty;
+        public decimal Mrp { get; set; }
+        public decimal Rate { get; set; }
+        public decimal? OldRate { get; set; }
+        public decimal DiscPer { get; set; }
+        public decimal DiscAmt { get; set; }
+        public decimal SpclDiscPer { get; set; }
+        public decimal SpclDiscAmt { get; set; }
+        public decimal GstPer { get; set; }
+        public decimal GstAmt { get; set; }
+        public decimal GrossAmt { get; set; }
+        public decimal NetAmt { get; set; }
+        public int Units { get; set; }
+        public decimal UnitCost { get; set; }
+        public int IssuedQty { get; set; }
+        public string Barcode { get; set; } = string.Empty;
+    }
+
+    public class ReceivingItemSearchModel
+    {
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string ItemCode { get; set; } = string.Empty;
+        public int? SubSubCategoryId { get; set; }
+        public int Packing { get; set; }
+        public string HsnCode { get; set; } = string.Empty;
+        public decimal? GstPer { get; set; }
+        public int Expirable { get; set; }
+        public string PurchaseUnitName { get; set; } = string.Empty;
+        public string SaleUnitName { get; set; } = string.Empty;
+        public string ManufacturerName { get; set; } = string.Empty;
+        public string HoldStatus { get; set; } = string.Empty;
+        public string HoldRemarks { get; set; } = string.Empty;
+        public decimal? LastRate { get; set; }
+        public decimal? LastMrp { get; set; }
+    }
+
+    /// <summary>one earlier receiving of an item (S_GetItemPurchaseHistory, OLD "Last Purchase History")</summary>
+    public class ItemPurchaseHistoryModel
+    {
+        public int ReceivingId { get; set; }
+        public string ReceivingNo { get; set; } = string.Empty;
+        public DateTime GrnDate { get; set; }
+        public DateTime? InvoiceDate { get; set; }
+        public string InvoiceNo { get; set; } = string.Empty;
+        public string ChallanNo { get; set; } = string.Empty;
+        public int StatusId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string StoreType { get; set; } = string.Empty;
+        public string VendorName { get; set; } = string.Empty;
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public int Packing { get; set; }
+        public decimal FreeQty { get; set; }
+        public string BatchNo { get; set; } = string.Empty;
+        public DateTime? ExpiryDate { get; set; }
+        public decimal Qty { get; set; }
+        public decimal Mrp { get; set; }
+        public decimal MajorMrp { get; set; }
+        public decimal Rate { get; set; }
+        public decimal UnitCost { get; set; }
+        public decimal GstPer { get; set; }
+        public decimal DiscAmt { get; set; }
+        public decimal DiscPer { get; set; }
+        public string Barcode { get; set; } = string.Empty;
+    }
+
+    /// <summary>item found by a scanned barcode (S_GetItemByBarcode)</summary>
+    public class BarcodeItemModel : ReceivingItemSearchModel
+    {
+        /// <summary>GRN = an earlier lot carries this barcode; Item Master = ServiceItemMaster.Barcode</summary>
+        public string Source { get; set; } = string.Empty;
+        public DateTime? LastBarcodeOn { get; set; }
+    }
+
+    /// <summary>one unsaved GRN kept in Redis for the user (key _GrnUnsaved_{hospId}_{userId})</summary>
+    public class GrnUnsavedDraftModel
+    {
+        public string DraftId { get; set; } = string.Empty;
+        public int BranchId { get; set; }
+        public string VendorName { get; set; } = string.Empty;
+        public string DocNo { get; set; } = string.Empty;
+        public int ItemCount { get; set; }
+        public DateTime CreatedOn { get; set; }
+        public DateTime ModifiedOn { get; set; }
+        public string Data { get; set; } = string.Empty;
+    }
+
+    public class ReceivingStoreModel
+    {
+        public int RoleId { get; set; }
+        public string RoleName { get; set; } = string.Empty;
     }
 }

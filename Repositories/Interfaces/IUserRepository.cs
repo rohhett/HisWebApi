@@ -6,7 +6,7 @@ namespace HISWEBAPI.Repositories.Interfaces
 {
     public interface IUserRepository
     {
-        ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request);
+        ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request, string? ipAddress = null);
         ServiceResult<string> Logout(LogoutRequest request);
         ServiceResult<UserSignupResponseData> NewUserSignUp(UserSignupRequest request);
         ServiceResult<SmsOtpResponseData> SendSmsOtp(SendSmsOtpRequest request);

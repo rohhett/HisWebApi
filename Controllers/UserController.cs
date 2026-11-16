@@ -53,7 +53,7 @@ namespace HISWEBAPI.Controllers
                 });
             }
 
-            var serviceResult = _userRepository.UserLogin(request);
+            var serviceResult = _userRepository.UserLogin(request, HttpContext.Connection.RemoteIpAddress?.ToString());
 
             if (serviceResult.Result)
                 _log.Info($"User login successful: {serviceResult.Message}");

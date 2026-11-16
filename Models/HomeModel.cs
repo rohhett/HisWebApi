@@ -137,6 +137,8 @@
     {
         public byte[] Content { get; set; } = [];
         public string FileName { get; set; } = "PatientReport.pdf";
+        /// <summary>false when no investigation matched the request (the PDF is empty).</summary>
+        public bool HasData { get; set; } = true;
     }
 
     public class PredefineQueryConfig
