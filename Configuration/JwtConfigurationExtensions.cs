@@ -2,6 +2,7 @@
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using HISWEBAPI.Services;
+using HISWEBAPI.Services.Interfaces;
 
 namespace HISWEBAPI.Configuration
 {
@@ -41,6 +42,22 @@ namespace HISWEBAPI.Configuration
 
                 options.Events = new JwtBearerEvents
                 {
+                    // refuse a token that was cancelled by logout (see TokenRevocationService)
+                    OnTokenValidated = context =>
+                    {
+                        var revocation = context.HttpContext.RequestServices.GetRequiredService<ITokenRevocationService>();
+                        string? jti = context.SecurityToken?.Id;
+                        if (string.IsNullOrEmpty(jti))
+                            jti = context.Principal?.FindFirst("jti")?.Value;
+                        long.TryParse(context.Principal?.FindFirst("sessionId")?.Value, out long sessionId);
+
+                        if (revocation.IsRevoked(jti, sessionId))
+                        {
+                            context.Response.Headers["Token-Revoked"] = "true";
+                            context.Fail("This access token was cancelled by logout.");
+                        }
+                        return Task.CompletedTask;
+                    },
                     OnAuthenticationFailed = context =>
                     {
                         if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))

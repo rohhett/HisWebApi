@@ -71,5 +71,34 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<StockReceivingSaveResponse> SaveStockReceiving(StockReceivingSaveRequest request, AllGlobalValues globalValues);
 
         ServiceResult<StockReceivingSaveResponse> ChangeStockReceivingStatus(string action, StockReceivingActionRequest request, AllGlobalValues globalValues);
+
+        // Purchase Request (2026-11-16)
+        ServiceResult<IEnumerable<ReceivingStoreModel>> GetPurchaseRequestDepartments(AllGlobalValues globalValues);
+
+        ServiceResult<IEnumerable<PurchaseRequestItemSearchModel>> SearchPurchaseRequestItem(int branchId, int fromDeptId, string storeType, string? search, bool belowReorderLevel, AllGlobalValues globalValues);
+
+        ServiceResult<IEnumerable<PurchaseRequestListModel>> GetPurchaseRequestList(int branchId, DateTime fromDate, DateTime toDate, int? fromDeptId, int? toDeptId, string? storeType, int? statusId, string? prNo, AllGlobalValues globalValues);
+
+        ServiceResult<PurchaseRequestDetailsModel> GetPurchaseRequestDetails(int purchaseRequestId, AllGlobalValues globalValues);
+
+        ServiceResult<IEnumerable<ItemDepartmentStockModel>> GetItemStockByDepartment(int branchId, int itemId, AllGlobalValues globalValues);
+
+        ServiceResult<PurchaseRequestSaveResponse> SavePurchaseRequest(PurchaseRequestSaveRequest request, AllGlobalValues globalValues);
+
+        /// <summary>action = send | cancel</summary>
+        ServiceResult<PurchaseRequestSaveResponse> ChangePurchaseRequestStatus(string action, PurchaseRequestActionRequest request, AllGlobalValues globalValues);
+
+        ServiceResult<PurchaseRequestSaveResponse> ApprovePurchaseRequest(PurchaseRequestApproveRequest request, AllGlobalValues globalValues);
+
+        // Purchase Order + Purchase Order Approval (2026-11-16)
+        ServiceResult<IEnumerable<POTermConditionModel>> GetPOTermConditions(AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PurchaseOrderItemDefaultModel>> GetPurchaseOrderItemDefaults(int branchId, string storeType, string? itemIds, bool belowReorderLevel, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<ApprovedPurchaseRequestForPoModel>> GetApprovedPurchaseRequestsForPo(int branchId, string storeType, DateTime fromDate, DateTime toDate, int? fromDeptId, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PurchaseOrderItemDefaultModel>> GetPurchaseRequestItemsForPo(int branchId, string purchaseRequestIds, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PurchaseOrderListModel>> GetPurchaseOrderList(int branchId, DateTime fromDate, DateTime toDate, string? storeType, int? vendorId, int? statusId, string? poNo, AllGlobalValues globalValues);
+        ServiceResult<PurchaseOrderDetailsModel> GetPurchaseOrderDetails(int poId, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PurchaseOrderSavedModel>> SavePurchaseOrder(PurchaseOrderSaveRequest request, AllGlobalValues globalValues);
+        ServiceResult<PurchaseOrderSavedModel> ChangePurchaseOrderStatus(string action, PurchaseOrderActionRequest request, AllGlobalValues globalValues);
+        ServiceResult<PurchaseOrderSavedModel> ApprovePurchaseOrder(PurchaseOrderApproveRequest request, AllGlobalValues globalValues);
     }
 }

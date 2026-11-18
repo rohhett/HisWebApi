@@ -29,9 +29,17 @@ namespace HISWEBAPI.Repositories.Implementations
         private readonly IJwtService _jwtService;
         private readonly JwtSettings _jwtSettings;
         private readonly IDistributedCache _distributedCache;
+        private readonly ITokenRevocationService _tokenRevocation;
         private static readonly ILog _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private readonly int _maxFailedAttempts;
         private readonly int _lockoutMinutes;
+        // SMS OTP policy (appsettings "OtpPolicy")
+        private readonly int _otpExpiryMinutes;
+        private readonly int _otpMaxWrongAttempts;
+        private readonly int _otpResendCooldownSeconds;
+        private readonly int _otpMaxSendsPerWindow;
+        private readonly int _otpSendWindowMinutes;
+        private readonly int _otpLockoutMinutes;
 
         public UserRepository(
             ICustomSqlHelper sqlHelper,
@@ -41,11 +49,19 @@ namespace HISWEBAPI.Repositories.Implementations
             IJwtService jwtService,
             IOptions<JwtSettings> jwtSettings,
             IDistributedCache distributedCache,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            ITokenRevocationService tokenRevocation)
         {
+            _tokenRevocation = tokenRevocation;
             // login lockout settings (appsettings "LoginLockout"), defaults 5 attempts / 15 minutes
             _maxFailedAttempts = Math.Max(1, configuration.GetValue("LoginLockout:MaxFailedAttempts", 5));
             _lockoutMinutes = Math.Max(1, configuration.GetValue("LoginLockout:LockoutMinutes", 15));
+            _otpExpiryMinutes = Math.Max(1, configuration.GetValue("OtpPolicy:ExpiryMinutes", 5));
+            _otpMaxWrongAttempts = Math.Max(1, configuration.GetValue("OtpPolicy:MaxWrongAttempts", 5));
+            _otpResendCooldownSeconds = Math.Max(0, configuration.GetValue("OtpPolicy:ResendCooldownSeconds", 60));
+            _otpMaxSendsPerWindow = Math.Max(1, configuration.GetValue("OtpPolicy:MaxSendsPerWindow", 5));
+            _otpSendWindowMinutes = Math.Max(1, configuration.GetValue("OtpPolicy:SendWindowMinutes", 60));
+            _otpLockoutMinutes = Math.Max(1, configuration.GetValue("OtpPolicy:LockoutMinutes", 15));
             _sqlHelper = sqlHelper;
             _messageService = messageService;
             _smsService = smsService;
@@ -146,7 +162,71 @@ namespace HISWEBAPI.Repositories.Implementations
 
         #endregion
 
-        public ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request, string? ipAddress = null)
+        #region Login history (dbo.UserLoginSessions)
+
+        private static string? Cut(string? value, int maxLength) =>
+            string.IsNullOrEmpty(value) ? value : (value.Length > maxLength ? value.Substring(0, maxLength) : value);
+
+        /// <summary>
+        /// Saves one row in UserLoginSessions for a successful login (SP I_UserLoginSession) and
+        /// returns its SessionId. A failure here is only logged: it never blocks the login.
+        /// </summary>
+        private long CreateLoginSession(int userId, int branchId, string? ipAddress, string? userAgent, string? clientType)
+        {
+            try
+            {
+                var (browser, browserVersion, os, device, deviceType) = BrowserDetectionHelper.ParseUserAgent(userAgent ?? "");
+
+                // Native mobile apps send no browser user-agent (e.g. "okhttp/4.12.0"), so the
+                // X-Client-Type header ("Mobile-Android-2.3") decides how the login is recorded.
+                var (isMobile, platform, appVersion, isTablet) = BrowserDetectionHelper.ParseClientType(clientType);
+                if (isMobile)
+                {
+                    browser = "Mobile App";
+                    browserVersion = appVersion ?? "Unknown";
+                    deviceType = isTablet ? "Tablet" : "Mobile";
+
+                    // keep a more exact OS from the user-agent ("Android 14"), else use the header's platform
+                    if (!string.IsNullOrEmpty(platform) &&
+                        !os.StartsWith(platform, StringComparison.OrdinalIgnoreCase))
+                        os = platform;
+
+                    // keep a real model from the user-agent ("SM-S918B", "iPhone"), else a generic name
+                    if (device is "Unknown" or "Desktop")
+                        device = isTablet ? "Tablet" : "Mobile";
+                }
+
+                var dt = _sqlHelper.GetDataTable("I_UserLoginSession", CommandType.StoredProcedure, new
+                {
+                    UserId = userId,
+                    BranchId = branchId,
+                    IpAddress = Cut(ipAddress, 50),
+                    UserAgent = Cut(userAgent, 500),
+                    Browser = Cut(browser, 100),
+                    BrowserVersion = Cut(browserVersion, 50),
+                    OperatingSystem = Cut(os, 100),
+                    Device = Cut(device, 200),
+                    DeviceType = Cut(deviceType, 50),
+                    Location = (string?)null
+                });
+
+                long sessionId = dt != null && dt.Rows.Count > 0 && dt.Rows[0]["SessionId"] != DBNull.Value
+                    ? Convert.ToInt64(dt.Rows[0]["SessionId"])
+                    : 0;
+
+                _log.Info($"Login session saved. SessionId={sessionId}, UserId={userId}, BranchId={branchId}, IP={ipAddress}, Client={clientType}, Browser={browser} {browserVersion}, OS={os}, DeviceType={deviceType}");
+                return sessionId;
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                return 0;
+            }
+        }
+
+        #endregion
+
+        public ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request, string? ipAddress = null, string? userAgent = null, string? clientType = null)
         {
             try
             {
@@ -196,13 +276,16 @@ namespace HISWEBAPI.Repositories.Implementations
                 string userName = userRow["UserName"]?.ToString() ?? "";
                 int hospId = Convert.ToInt32(userRow["HospId"]);
 
+                // login history row in UserLoginSessions (0 if it could not be saved)
+                long sessionId = CreateLoginSession(userId, request.BranchId, ipAddress, userAgent, clientType);
 
-                // Generate token with userId, username, hospId,roleId,userName,name and branchId
+                // Generate token with userId, username, name, hospId and the login sessionId
                 string accessToken = _jwtService.GenerateToken(
                     userId,
                     userName.ToString(),
                     name.ToString(),
-                    hospId
+                    hospId,
+                    sessionId
                 );
 
                 var responseData = new UserLoginResponseData
@@ -213,10 +296,15 @@ namespace HISWEBAPI.Repositories.Implementations
                     contact = Convert.ToString(userRow["Contact"]),
                     isContactVerified = Convert.ToBoolean(userRow["IsContactVerified"]),
                     isEmailVerified = Convert.ToBoolean(userRow["IsEmailVerified"]),
+                    // column added by 2026-11-17_UserMaster_ContactVerificationRequired.sql; default Yes until it exists
+                    contactVerificationRequired = !userRow.Table.Columns.Contains("IsContactVerificationRequired")
+                        || userRow["IsContactVerificationRequired"] == DBNull.Value
+                        || Convert.ToBoolean(userRow["IsContactVerificationRequired"]),
                     branchId = request.BranchId,
                     accessToken = accessToken,
                     tokenType = "Bearer",
-                    expiresIn = _jwtSettings.ExpiryMinutes * 60 // Convert minutes to seconds
+                    expiresIn = _jwtSettings.ExpiryMinutes * 60, // Convert minutes to seconds
+                    sessionId = sessionId
                 };
 
                 var alert1 = _messageService.GetMessageAndTypeByAlertCode("LOGIN_SUCCESS");
@@ -241,23 +329,31 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
       
-        public ServiceResult<string> Logout(LogoutRequest request)
+        /// <summary>
+        /// Ends the caller's login: cancels the access token used for this call (jti, until it
+        /// would expire), marks its UserLoginSessions row "Logged Out" and invalidates refresh tokens.
+        /// The session id is taken from the token; the body value is only used for older tokens without it.
+        /// </summary>
+        public ServiceResult<string> Logout(LogoutRequest request, long tokenSessionId, string? tokenJti, DateTime tokenExpiresUtc)
         {
             try
             {
-                if (request?.SessionId > 0)
-                {
-                    bool sessionUpdated = UpdateLoginSessionInternal(request.SessionId, "Logged Out", request.LogoutReason ?? "User Logout");
-                    bool tokenInvalidated = InvalidateRefreshTokenInternal(request.SessionId);
+                // 1. the access token stops working at once
+                _tokenRevocation.Revoke(tokenJti, tokenExpiresUtc);
 
-                    if (!sessionUpdated || !tokenInvalidated)
-                    {
-                        _log.Warn($"Logout partially failed for SessionId={request.SessionId}");
-                    }
+                // 2. close the login session row
+                long sessionId = tokenSessionId > 0 ? tokenSessionId : (request?.SessionId ?? 0);
+                if (sessionId > 0)
+                {
+                    bool sessionUpdated = UpdateLoginSessionInternal(sessionId, "Logged Out", request?.LogoutReason ?? "User Logout");
+                    InvalidateRefreshTokenInternal(sessionId); // no rows while refresh tokens are not issued
+
+                    if (!sessionUpdated)
+                        _log.Warn($"Logout: login session not updated for SessionId={sessionId}");
                 }
 
                 var alert = _messageService.GetMessageAndTypeByAlertCode("LOGOUT_SUCCESS");
-                _log.Info($"User logged out successfully. SessionId={request.SessionId}");
+                _log.Info($"User logged out successfully. SessionId={sessionId}, jti={tokenJti}");
 
                 return ServiceResult<string>.Success(
                     "Logged out successfully",
@@ -385,8 +481,28 @@ namespace HISWEBAPI.Repositories.Implementations
                     );
                 }
 
+                // resend cooldown + cap on sends per window
+                var (waitSeconds, reason) = GetOtpResendWait(userId, "SMS");
+                if (waitSeconds > 0)
+                {
+                    var alert = OtpThrottleAlert(reason);
+                    _log.Warn($"SMS OTP refused for {request.UserName}: {reason}, wait {waitSeconds}s");
+                    var throttled = ServiceResult<SmsOtpResponseData>.Failure(
+                        alert.Type, $"{alert.Message} Try again in {FormatWait(waitSeconds)}.", 429);
+                    throttled.Data = new SmsOtpResponseData
+                    {
+                        userId = userId,
+                        contactHint = GenerateContactHint(registeredContact),
+                        resendAfterSeconds = waitSeconds,
+                        lockedSeconds = reason == OtpWaitReason.Locked ? waitSeconds : 0,
+                        otpExpiryMinutes = _otpExpiryMinutes,
+                        maxAttempts = _otpMaxWrongAttempts
+                    };
+                    return throttled;
+                }
+
                 string otp = GenerateOtp();
-                bool otpStored = StoreOtpForPasswordResetInternal(userId, otp, 5);
+                bool otpStored = StoreOtpForPasswordResetInternal(userId, otp, _otpExpiryMinutes);
 
                 if (!otpStored)
                 {
@@ -410,7 +526,10 @@ namespace HISWEBAPI.Repositories.Implementations
                 var responseData = new SmsOtpResponseData
                 {
                     userId = userId,
-                    contactHint = contactHintSuccess
+                    contactHint = contactHintSuccess,
+                    resendAfterSeconds = _otpResendCooldownSeconds,
+                    otpExpiryMinutes = _otpExpiryMinutes,
+                    maxAttempts = _otpMaxWrongAttempts
                 };
 
                 var alert1 = _messageService.GetMessageAndTypeByAlertCode("OTP_SENT_SMS");
@@ -439,7 +558,7 @@ namespace HISWEBAPI.Repositories.Implementations
         {
             try
             {
-                var (result, message) = VerifySmsOtpInternal(request.UserId, request.Otp);
+                var (result, message, attemptsLeft, lockedSeconds) = VerifySmsOtpInternal(request.UserId, request.Otp);
 
                 var responseData = new OtpVerificationResponseData
                 {
@@ -478,8 +597,6 @@ namespace HISWEBAPI.Repositories.Implementations
                         );
 
                     case -3:
-                    case -4:
-                    case -5:
                         var alert3 = _messageService.GetMessageAndTypeByAlertCode("OTP_VALIDATION_FAILED");
                         _log.Warn($"OTP validation failed for UserId {request.UserId}: {message}");
                         return ServiceResult<OtpVerificationResponseData>.Failure(
@@ -488,14 +605,39 @@ namespace HISWEBAPI.Repositories.Implementations
                             400
                         );
 
+                    case -4:
+                        var alertUsed = OtpAlert("OTP_ALREADY_USED", "Error", "This OTP has already been used. Please request a new OTP.");
+                        _log.Warn($"Used OTP entered for UserId {request.UserId}");
+                        return ServiceResult<OtpVerificationResponseData>.Failure(alertUsed.Type, alertUsed.Message, 400);
+
+                    case -5:
+                        var alertExpired = _messageService.GetMessageAndTypeByAlertCode("OTP_EXPIRED");
+                        _log.Warn($"Expired OTP entered for UserId {request.UserId}");
+                        return ServiceResult<OtpVerificationResponseData>.Failure(alertExpired.Type, alertExpired.Message, 400);
+
                     case -6:
                         var alert4 = _messageService.GetMessageAndTypeByAlertCode("INVALID_OTP");
-                        _log.Warn($"Invalid OTP entered for UserId: {request.UserId}");
-                        return ServiceResult<OtpVerificationResponseData>.Failure(
+                        _log.Warn($"Invalid OTP entered for UserId: {request.UserId}, attempts left {attemptsLeft}");
+                        responseData.attemptsLeft = attemptsLeft;
+                        var wrong = ServiceResult<OtpVerificationResponseData>.Failure(
                             alert4.Type,
-                            alert4.Message,
+                            attemptsLeft.HasValue
+                                ? $"{alert4.Message} {attemptsLeft} attempt{(attemptsLeft == 1 ? "" : "s")} left."
+                                : alert4.Message,
                             400
                         );
+                        wrong.Data = responseData;
+                        return wrong;
+
+                    case -7:
+                    case -8:
+                        var alert7 = OtpLockAlert(result, lockedSeconds);
+                        _log.Warn($"OTP locked for UserId {request.UserId} (result {result}), {lockedSeconds}s left");
+                        responseData.attemptsLeft = 0;
+                        responseData.lockedSeconds = lockedSeconds;
+                        var blocked = ServiceResult<OtpVerificationResponseData>.Failure(alert7.Type, alert7.Message, 429);
+                        blocked.Data = responseData;
+                        return blocked;
 
                     default:
                         var alert5 = _messageService.GetMessageAndTypeByAlertCode("OTP_VERIFICATION_ERROR");
@@ -550,8 +692,28 @@ namespace HISWEBAPI.Repositories.Implementations
                     );
                 }
 
+                // resend cooldown + cap on sends per window
+                var (waitSeconds, reason) = GetOtpResendWait(userId, "EMAIL");
+                if (waitSeconds > 0)
+                {
+                    var alert = OtpThrottleAlert(reason);
+                    _log.Warn($"Email OTP refused for {request.UserName}: {reason}, wait {waitSeconds}s");
+                    var throttled = ServiceResult<EmailOtpResponseData>.Failure(
+                        alert.Type, $"{alert.Message} Try again in {FormatWait(waitSeconds)}.", 429);
+                    throttled.Data = new EmailOtpResponseData
+                    {
+                        userId = userId,
+                        emailHint = GenerateEmailHint(registeredEmail),
+                        resendAfterSeconds = waitSeconds,
+                        lockedSeconds = reason == OtpWaitReason.Locked ? waitSeconds : 0,
+                        otpExpiryMinutes = _otpExpiryMinutes,
+                        maxAttempts = _otpMaxWrongAttempts
+                    };
+                    return throttled;
+                }
+
                 string otp = GenerateOtp();
-                bool otpStored = StoreEmailOtpForPasswordResetInternal(userId, otp, 5);
+                bool otpStored = StoreEmailOtpForPasswordResetInternal(userId, otp, _otpExpiryMinutes);
 
                 if (!otpStored)
                 {
@@ -581,7 +743,10 @@ namespace HISWEBAPI.Repositories.Implementations
                 var responseData = new EmailOtpResponseData
                 {
                     userId = userId,
-                    emailHint = emailHintSuccess
+                    emailHint = emailHintSuccess,
+                    resendAfterSeconds = _otpResendCooldownSeconds,
+                    otpExpiryMinutes = _otpExpiryMinutes,
+                    maxAttempts = _otpMaxWrongAttempts
                 };
 
                 var alert1 = _messageService.GetMessageAndTypeByAlertCode("OTP_SENT_EMAIL");
@@ -606,18 +771,18 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
-        public ServiceResult<string> VerifyEmailOtp(VerifyEmailOtpRequest request)
+        public ServiceResult<object> VerifyEmailOtp(VerifyEmailOtpRequest request)
         {
             try
             {
-                var (result, message) = VerifyEmailOtpInternal(request.UserId, request.Otp);
+                var (result, message, attemptsLeft, lockedSeconds) = VerifyEmailOtpInternal(request.UserId, request.Otp);
 
                 switch (result)
                 {
                     case 1:
                         var alert = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VERIFIED");
                         _log.Info($"Email OTP verified successfully for UserId: {request.UserId}");
-                        return ServiceResult<string>.Success(
+                        return ServiceResult<object>.Success(
                             "Email OTP verified",
                             alert.Type,
                             alert.Message,
@@ -627,7 +792,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     case -1:
                         var alert1 = _messageService.GetMessageAndTypeByAlertCode("USER_NOT_FOUND_OTP");
                         _log.Warn($"User not found: UserId={request.UserId}");
-                        return ServiceResult<string>.Failure(
+                        return ServiceResult<object>.Failure(
                             alert1.Type,
                             alert1.Message,
                             404
@@ -636,36 +801,56 @@ namespace HISWEBAPI.Repositories.Implementations
                     case -2:
                         var alert2 = _messageService.GetMessageAndTypeByAlertCode("USER_INACTIVE");
                         _log.Warn($"Inactive user attempted OTP verification: UserId={request.UserId}");
-                        return ServiceResult<string>.Failure(
+                        return ServiceResult<object>.Failure(
                             alert2.Type,
                             alert2.Message,
                             400
                         );
 
                     case -3:
-                    case -4:
-                    case -5:
                         var alert3 = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VALIDATION_FAILED");
                         _log.Warn($"Email OTP validation failed for UserId {request.UserId}: {message}");
-                        return ServiceResult<string>.Failure(
+                        return ServiceResult<object>.Failure(
                             alert3.Type,
                             alert3.Message,
                             400
                         );
 
+                    case -4:
+                        var alertUsed = OtpAlert("OTP_ALREADY_USED", "Error", "This OTP has already been used. Please request a new OTP.");
+                        _log.Warn($"Used email OTP entered for UserId {request.UserId}");
+                        return ServiceResult<object>.Failure(alertUsed.Type, alertUsed.Message, 400);
+
+                    case -5:
+                        var alertExpired = _messageService.GetMessageAndTypeByAlertCode("OTP_EXPIRED");
+                        _log.Warn($"Expired email OTP entered for UserId {request.UserId}");
+                        return ServiceResult<object>.Failure(alertExpired.Type, alertExpired.Message, 400);
+
                     case -6:
                         var alert4 = _messageService.GetMessageAndTypeByAlertCode("INVALID_EMAIL_OTP");
-                        _log.Warn($"Invalid email OTP entered for UserId: {request.UserId}");
-                        return ServiceResult<string>.Failure(
+                        _log.Warn($"Invalid email OTP entered for UserId: {request.UserId}, attempts left {attemptsLeft}");
+                        var wrong = ServiceResult<object>.Failure(
                             alert4.Type,
-                            alert4.Message,
+                            attemptsLeft.HasValue
+                                ? $"{alert4.Message} {attemptsLeft} attempt{(attemptsLeft == 1 ? "" : "s")} left."
+                                : alert4.Message,
                             400
                         );
+                        wrong.Data = new { userId = request.UserId, attemptsLeft };
+                        return wrong;
+
+                    case -7:
+                    case -8:
+                        var alert7 = OtpLockAlert(result, lockedSeconds);
+                        _log.Warn($"Email OTP locked for UserId {request.UserId} (result {result}), {lockedSeconds}s left");
+                        var blocked = ServiceResult<object>.Failure(alert7.Type, alert7.Message, 429);
+                        blocked.Data = new { userId = request.UserId, attemptsLeft = 0, lockedSeconds };
+                        return blocked;
 
                     default:
                         var alert5 = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VERIFICATION_ERROR");
                         _log.Error($"Unknown error during email OTP verification for UserId: {request.UserId}. Result code: {result}");
-                        return ServiceResult<string>.Failure(
+                        return ServiceResult<object>.Failure(
                             alert5.Type,
                             alert5.Message,
                             500
@@ -676,7 +861,7 @@ namespace HISWEBAPI.Repositories.Implementations
             {
                 LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
                 var alert = _messageService.GetMessageAndTypeByAlertCode("VERIFY_EMAIL_OTP_ERROR");
-                return ServiceResult<string>.Failure(
+                return ServiceResult<object>.Failure(
                     alert.Type,
                     alert.Message,
                     500
@@ -697,6 +882,15 @@ namespace HISWEBAPI.Repositories.Implementations
                         alert.Message,
                         400
                     );
+                }
+
+                // wrong-OTP lockout also blocks password reset
+                int lockedFor = GetOtpLockedSeconds(request.UserId);
+                if (lockedFor > 0)
+                {
+                    var alertLocked = OtpLockAlert(-8, lockedFor);
+                    _log.Warn($"Password reset refused, OTP lock active for UserId {request.UserId}, {lockedFor}s left");
+                    return ServiceResult<string>.Failure(alertLocked.Type, alertLocked.Message, 429);
                 }
 
                 string hashedPassword = PasswordHasher.HashPassword(request.NewPassword);
@@ -904,23 +1098,122 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
-        private (int result, string message) VerifySmsOtpInternal(long userId, string otp)
+        private (int result, string message, int? attemptsLeft, int lockedSeconds) VerifySmsOtpInternal(long userId, string otp) =>
+            RunVerifyOtpProcedure("S_VerifySmsOtp", userId, otp);
+
+        /// <summary>Runs S_VerifySmsOtp / S_VerifyEmailOtp (same parameters).</summary>
+        private (int result, string message, int? attemptsLeft, int lockedSeconds) RunVerifyOtpProcedure(string procedure, long userId, string otp)
         {
             SqlParameter[] parameters = new SqlParameter[]
             {
                 new SqlParameter("@UserId", userId),
                 new SqlParameter("@Otp", otp),
                 new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output },
-                new SqlParameter("@Message", SqlDbType.NVarChar, 255) { Direction = ParameterDirection.Output }
+                new SqlParameter("@Message", SqlDbType.NVarChar, 255) { Direction = ParameterDirection.Output },
+                new SqlParameter("@MaxAttempts", _otpMaxWrongAttempts),
+                new SqlParameter("@AttemptsLeft", SqlDbType.Int) { Direction = ParameterDirection.Output },
+                new SqlParameter("@LockMinutes", _otpLockoutMinutes),
+                new SqlParameter("@LockedSeconds", SqlDbType.Int) { Direction = ParameterDirection.Output }
             };
 
-            _sqlHelper.RunProcedure("S_VerifySmsOtp", parameters);
+            _sqlHelper.RunProcedure(procedure, parameters);
 
-            int result = parameters[2].Value != DBNull.Value ? Convert.ToInt32(parameters[2].Value) : 0;
-            string message = parameters[3].Value != DBNull.Value ? parameters[3].Value.ToString() : "Unknown error";
+            static int? IntOrNull(object? v) => v is null || v == DBNull.Value ? null : Convert.ToInt32(v);
 
-            return (result, message);
+            int result = IntOrNull(parameters[2].Value) ?? 0;
+            string message = parameters[3].Value != DBNull.Value ? parameters[3].Value?.ToString() ?? "" : "Unknown error";
+            return (result, message, IntOrNull(parameters[5].Value), IntOrNull(parameters[7].Value) ?? 0);
         }
+
+        private enum OtpWaitReason { None, Cooldown, SendLimit, Locked }
+
+        /// <summary>
+        /// Seconds the user must wait before another OTP of this type, "SMS" / "EMAIL" (0 = may send now),
+        /// and why: wrong-OTP lock, per-window send cap, or the short resend cooldown.
+        /// If the check itself fails the send is allowed, so a DB glitch never blocks password reset.
+        /// </summary>
+        private (int waitSeconds, OtpWaitReason reason) GetOtpResendWait(long userId, string otpType)
+        {
+            try
+            {
+                var dt = _sqlHelper.GetDataTable("S_GetOtpSendInfo", CommandType.StoredProcedure,
+                    new { UserId = userId, OtpType = otpType, WindowMinutes = _otpSendWindowMinutes });
+                if (dt == null || dt.Rows.Count == 0) return (0, OtpWaitReason.None);
+
+                var row = dt.Rows[0];
+                int? sinceLast = row["SecondsSinceLastSend"] == DBNull.Value ? null : Convert.ToInt32(row["SecondsSinceLastSend"]);
+                int sends = row["SendsInWindow"] == DBNull.Value ? 0 : Convert.ToInt32(row["SendsInWindow"]);
+                int? oldestAgo = row["OldestSendSecondsAgo"] == DBNull.Value ? null : Convert.ToInt32(row["OldestSendSecondsAgo"]);
+                int locked = dt.Columns.Contains("LockedSeconds") && row["LockedSeconds"] != DBNull.Value
+                    ? Convert.ToInt32(row["LockedSeconds"]) : 0;
+
+                if (locked > 0) return (locked, OtpWaitReason.Locked);
+
+                if (sends >= _otpMaxSendsPerWindow && oldestAgo.HasValue)
+                {
+                    int wait = _otpSendWindowMinutes * 60 - oldestAgo.Value;
+                    if (wait > 0) return (wait, OtpWaitReason.SendLimit);
+                }
+
+                if (sinceLast.HasValue && sinceLast.Value < _otpResendCooldownSeconds)
+                    return (_otpResendCooldownSeconds - sinceLast.Value, OtpWaitReason.Cooldown);
+
+                return (0, OtpWaitReason.None);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                return (0, OtpWaitReason.None);
+            }
+        }
+
+        /// <summary>Seconds left on the user's wrong-OTP lock (0 = not locked or check failed).</summary>
+        private int GetOtpLockedSeconds(long userId)
+        {
+            try
+            {
+                var dt = _sqlHelper.GetDataTable("S_GetOtpLockStatus", CommandType.StoredProcedure, new { UserId = userId });
+                return dt != null && dt.Rows.Count > 0 && dt.Rows[0]["LockedSeconds"] != DBNull.Value
+                    ? Convert.ToInt32(dt.Rows[0]["LockedSeconds"]) : 0;
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                return 0;
+            }
+        }
+
+        private (string Type, string Message) OtpThrottleAlert(OtpWaitReason reason) => reason switch
+        {
+            OtpWaitReason.Locked => OtpAlert("OTP_LOCKED", "Error",
+                "OTP verification and password reset are temporarily blocked because of too many wrong OTPs."),
+            OtpWaitReason.SendLimit => OtpAlert("OTP_SEND_LIMIT_REACHED", "Error", "OTP request limit reached. Please try again later."),
+            _ => OtpAlert("OTP_RESEND_WAIT", "Warn", "Please wait before requesting a new OTP.")
+        };
+
+        /// <summary>-7 = this wrong OTP started the lock, -8 = already locked.</summary>
+        private (string Type, string Message) OtpLockAlert(int result, int lockedSeconds)
+        {
+            var alert = result == -7
+                ? OtpAlert("OTP_ATTEMPTS_EXCEEDED", "Error",
+                    "Too many wrong OTPs. OTP verification and password reset are blocked for this user.")
+                : OtpAlert("OTP_LOCKED", "Error",
+                    "OTP verification and password reset are temporarily blocked because of too many wrong OTPs.");
+            int wait = lockedSeconds > 0 ? lockedSeconds : _otpLockoutMinutes * 60;
+            return (alert.Type, $"{alert.Message} Try again in {FormatWait(wait)}.");
+        }
+
+        /// <summary>Alert from ResponseMessageMaster, with a fallback while a new code is not yet in the DB/cache.</summary>
+        private (string Type, string Message) OtpAlert(string code, string fallbackType, string fallbackMessage)
+        {
+            var alert = _messageService.GetMessageAndTypeByAlertCode(code);
+            if (string.IsNullOrWhiteSpace(alert.Message) || alert.Message == "Response message not found.")
+                return (fallbackType, fallbackMessage);
+            return (alert.Type, alert.Message);
+        }
+
+        private static string FormatWait(int seconds) =>
+            seconds >= 60 ? $"{(seconds + 59) / 60} min" : $"{seconds} sec";
 
         private (bool userExists, bool emailMatch, long userId, string registeredEmail) ValidateUserForEmailPasswordResetInternal(string userName, string email)
         {
@@ -965,23 +1258,8 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
-        private (int result, string message) VerifyEmailOtpInternal(long userId, string otp)
-        {
-            SqlParameter[] parameters = new SqlParameter[]
-            {
-                new SqlParameter("@UserId", userId),
-                new SqlParameter("@Otp", otp),
-                new SqlParameter("@Result", SqlDbType.Int) { Direction = ParameterDirection.Output },
-                new SqlParameter("@Message", SqlDbType.NVarChar, 255) { Direction = ParameterDirection.Output }
-            };
-
-            _sqlHelper.RunProcedure("S_VerifyEmailOtp", parameters);
-
-            int result = parameters[2].Value != DBNull.Value ? Convert.ToInt32(parameters[2].Value) : 0;
-            string message = parameters[3].Value != DBNull.Value ? parameters[3].Value.ToString() : "Unknown error";
-
-            return (result, message);
-        }
+        private (int result, string message, int? attemptsLeft, int lockedSeconds) VerifyEmailOtpInternal(long userId, string otp) =>
+            RunVerifyOtpProcedure("S_VerifyEmailOtp", userId, otp);
 
         private (bool result, string message) ResetPasswordByUserIdInternal(long userId, string otp, string hashedPassword)
         {

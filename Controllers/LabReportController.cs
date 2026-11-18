@@ -31,7 +31,7 @@ namespace HISWEBAPI.Controllers
 
 
         [HttpGet("printPatientInvestigationReport")]
-        [AllowAnonymous]
+        [Authorize]
         public IActionResult printPatientInvestigationReport([FromQuery] PatientInvestigationReportRequest request)
         {
             _log.Info($"printPatientInvestigationReport called. PatientInvestigationIds={request?.PatientInvestigationIds}");
@@ -79,7 +79,7 @@ namespace HISWEBAPI.Controllers
         /// <param name="investigationIds">optional comma separated dummy ids (1-10); empty = all 10</param>
         /// <param name="download">true = attachment, false = open inline</param>
         [HttpGet("printSettingPreviewReport")]
-        [AllowAnonymous]
+        [Authorize]
         public IActionResult PrintSettingPreviewReport(
             [FromQuery] int branchId,
             [FromQuery] int isHeaderPng = 0,

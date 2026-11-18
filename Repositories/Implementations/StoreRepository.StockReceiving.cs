@@ -224,6 +224,9 @@ namespace HISWEBAPI.Repositories.Implementations
                     Status = h.Field<string>("Status") ?? string.Empty,
                     CancelReason = h.Field<string>("CancelReason") ?? string.Empty,
                     CancelledOn = h.Field<DateTime?>("CancelledOn"),
+                    UnPostRemark = h.Field<string>("UnPostRemark") ?? string.Empty,
+                    UnPostedOn = h.Field<DateTime?>("UnPostedOn"),
+                    UnPostedByName = h.Field<string>("UnPostedByName") ?? string.Empty,
                     PostedOn = h.Field<DateTime?>("PostedOn"),
                     IsIssued = h.Field<int>("IsIssued") == 1
                 };
@@ -549,10 +552,14 @@ namespace HISWEBAPI.Repositories.Implementations
                 _log.Info($"ChangeStockReceivingStatus called. Action={action}, ReceivingId={request.ReceivingId}");
                 if (action == "cancel" && string.IsNullOrWhiteSpace(request.Reason))
                     return Invalid<StockReceivingSaveResponse>("Cancel reason is required");
+                if (action == "unpost" && string.IsNullOrWhiteSpace(request.Reason))
+                    return Invalid<StockReceivingSaveResponse>("Unpost remark is required");
 
                 string sp = action switch { "post" => "U_PostStockReceiving", "unpost" => "U_UnPostStockReceiving", _ => "U_CancelStockReceiving" };
                 object parameters = action == "cancel"
                     ? new { hospId = globalValues.hospId, receivingId = request.ReceivingId, reason = request.Reason!.Trim(), userId = globalValues.userId, ipAddress = globalValues.ipAddress }
+                    : action == "unpost"
+                    ? new { hospId = globalValues.hospId, receivingId = request.ReceivingId, remark = request.Reason!.Trim(), userId = globalValues.userId, ipAddress = globalValues.ipAddress }
                     : new { hospId = globalValues.hospId, receivingId = request.ReceivingId, userId = globalValues.userId, ipAddress = globalValues.ipAddress };
 
                 int result;
@@ -570,6 +577,7 @@ namespace HISWEBAPI.Repositories.Implementations
                 if (result <= 0)
                 {
                     string msg = result == -1 ? "Cannot unpost - stock from this GRN has already been issued"
+                        : result == -3 ? "Unpost remark is required"
                         : action == "post" ? "Only a Draft GRN can be posted"
                         : action == "unpost" ? "Only a Posted GRN can be unposted"
                         : "Only a Draft GRN can be cancelled - Unpost it first";

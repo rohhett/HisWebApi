@@ -18,6 +18,41 @@ namespace HISWEBAPI.Utilities
             return (browser, browserVersion, os, device, deviceType);
         }
 
+        /// <summary>
+        /// Reads the app's X-Client-Type header (set by ClientTypeMiddleware), e.g.
+        /// "Mobile-Android-2.3", "Mobile-iOS-v1.4.0", "Mobile-Android-Tablet-2.3" or just "Mobile".
+        /// Returns isMobile = false for "Web" / empty values.
+        /// </summary>
+        public static (bool isMobile, string? platform, string? appVersion, bool isTablet) ParseClientType(string? clientType)
+        {
+            if (string.IsNullOrWhiteSpace(clientType) ||
+                !clientType.Trim().StartsWith("Mobile", StringComparison.OrdinalIgnoreCase))
+                return (false, null, null, false);
+
+            string? platform = null;
+            string? version = null;
+            bool isTablet = false;
+
+            foreach (var raw in clientType.Trim().Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Skip(1))
+            {
+                if (raw.Equals("Tablet", StringComparison.OrdinalIgnoreCase)) { isTablet = true; continue; }
+                if (raw.Equals("iPad", StringComparison.OrdinalIgnoreCase)) isTablet = true;
+
+                // version: "2.3", "v2.3.1", "V10"
+                var v = Regex.Match(raw, @"^[vV]?(\d+(?:\.\d+)*)$");
+                if (v.Success) { version ??= v.Groups[1].Value; continue; }
+
+                platform ??= raw.ToLowerInvariant() switch
+                {
+                    "android" => "Android",
+                    "ios" or "iphone" or "ipad" => "iOS",
+                    _ => raw
+                };
+            }
+
+            return (true, platform, version, isTablet);
+        }
+
         private static string DetectBrowser(string userAgent)
         {
             if (userAgent.Contains("Edg/")) return "Edge";

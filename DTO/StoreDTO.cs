@@ -506,7 +506,166 @@ namespace HISWEBAPI.DTO
         [Range(1, int.MaxValue, ErrorMessage = "ReceivingId is required")]
         public int ReceivingId { get; set; }
 
-        /// <summary>Cancel only</summary>
+        /// <summary>Cancel: cancel reason. Unpost: unpost remark (required, 2026-11-17). Post: not used.</summary>
         [MaxLength(1000)] public string? Reason { get; set; }
     }
+
+    #region Purchase Request (2026-11-16)
+
+    public class PurchaseRequestItemRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "ItemId is required")]
+        public int ItemId { get; set; }
+
+        /// <summary>Requested quantity in purchase units (packs), whole number</summary>
+        public int Qty { get; set; }
+    }
+
+    public class PurchaseRequestSaveRequest
+    {
+        /// <summary>0 = new request, else the Draft request to update</summary>
+        public int PurchaseRequestId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId is required")]
+        public int BranchId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Please select From Department")]
+        public int FromDeptId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Please select department first")]
+        public int ToDeptId { get; set; }
+
+        /// <summary>Medical or General</summary>
+        [Required(ErrorMessage = "Store Type is required")]
+        public string StoreType { get; set; } = string.Empty;
+
+        [MaxLength(1000)] public string? Remarks { get; set; }
+
+        public List<PurchaseRequestItemRequest> Items { get; set; } = new();
+    }
+
+    public class PurchaseRequestActionRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "PurchaseRequestId is required")]
+        public int PurchaseRequestId { get; set; }
+
+        /// <summary>Cancel only</summary>
+        [MaxLength(500)] public string? Reason { get; set; }
+    }
+
+    public class PurchaseRequestApproveItem
+    {
+        [Range(1, int.MaxValue)] public int PurchaseRequestItemId { get; set; }
+        public int ApprovedQty { get; set; }
+    }
+
+    public class PurchaseRequestApproveRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "PurchaseRequestId is required")]
+        public int PurchaseRequestId { get; set; }
+
+        /// <summary>Approval level the user is approving (FlagId from the list)</summary>
+        [Range(1, 4, ErrorMessage = "Flag must be 1-4")]
+        public int Flag { get; set; }
+
+        [MaxLength(500)] public string? ApprovalRemarks { get; set; }
+
+        /// <summary>Approved quantity per line (0..requested). Lines left out keep their current approved quantity.</summary>
+        public List<PurchaseRequestApproveItem> Items { get; set; } = new();
+    }
+
+    #endregion
+
+    #region Purchase Order (2026-11-16)
+
+    /// <summary>one PO line; the vendor is per line (OLD Map Vendor) - lines are saved as one PO per vendor</summary>
+    public class PurchaseOrderItemRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "ItemId is required")]
+        public int ItemId { get; set; }
+        public int VendorId { get; set; }
+        public decimal Qty { get; set; }
+        public decimal FreeQty { get; set; }
+        public int Packing { get; set; }
+        public int Deal1 { get; set; }
+        public int Deal2 { get; set; }
+        [MaxLength(50)] public string? HsnCode { get; set; }
+        public decimal Mrp { get; set; }
+        public decimal Rate { get; set; }
+        public decimal DiscPer { get; set; }
+        public decimal DiscAmt { get; set; }
+        public decimal SpclDiscPer { get; set; }
+        public decimal GstPer { get; set; }
+    }
+
+    public class PurchaseOrderSaveRequest
+    {
+        /// <summary>0 = new (split into one PO per vendor), else the PO to update (all lines must then be that one vendor)</summary>
+        public int PoId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId is required")]
+        public int BranchId { get; set; }
+
+        /// <summary>From Department (user's role) - picks the approval rule</summary>
+        [Range(1, int.MaxValue, ErrorMessage = "Please select department first")]
+        public int RoleId { get; set; }
+
+        /// <summary>Medical or General</summary>
+        [Required(ErrorMessage = "Store is required")] public string StoreType { get; set; } = string.Empty;
+
+        /// <summary>No-Service / Service</summary>
+        [Required, MaxLength(50)] public string PoType { get; set; } = "No-Service";
+
+        /// <summary>1 PO By Item, 2 PO By Supplier, 3 PO By PR</summary>
+        [Range(1, 3, ErrorMessage = "Type must be PO By Item, PO By Supplier or PO By PR")]
+        public int TypeId { get; set; }
+
+        /// <summary>PO-level discount %, used only when no line has its own discount (GRN rule)</summary>
+        [Range(0, 100, ErrorMessage = "Discount % must be 0-100")]
+        public decimal DiscountPercent { get; set; }
+
+        [Required, MaxLength(50)] public string Priority { get; set; } = "Normal";
+        public DateTime PoDate { get; set; }
+        public DateTime? DeliveryDate { get; set; }
+        public DateTime? ValidDate { get; set; }
+        [MaxLength(500)] public string? Remarks { get; set; }
+        [MaxLength(500)] public string? DeliveryAddress { get; set; }
+        [MaxLength(512)] public string? DocumentPath { get; set; }
+        [MaxLength(1000)] public string? OtherTermCondition { get; set; }
+        public List<int> TermIds { get; set; } = new();
+        /// <summary>PO By PR: the approved requests the lines came from</summary>
+        public List<int> PurchaseRequestIds { get; set; } = new();
+        /// <summary>true = also send every saved PO for approval (Save &amp; Send)</summary>
+        public bool SendForApproval { get; set; }
+
+        public List<PurchaseOrderItemRequest> Items { get; set; } = new();
+    }
+
+    public class PurchaseOrderActionRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "PoId is required")]
+        public int PoId { get; set; }
+
+        /// <summary>Cancel only</summary>
+        [MaxLength(500)] public string? Reason { get; set; }
+    }
+
+    public class PurchaseOrderApproveRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "PoId is required")]
+        public int PoId { get; set; }
+
+        [Range(1, 4, ErrorMessage = "Flag must be 1-4")]
+        public int Flag { get; set; }
+
+        [MaxLength(500)] public string? ApprovalRemarks { get; set; }
+    }
+
+    public class PurchaseOrderDocumentRequest
+    {
+        [Required(ErrorMessage = "Document file is required")]
+        public IFormFile? UploadFile { get; set; }
+    }
+
+    #endregion
 }

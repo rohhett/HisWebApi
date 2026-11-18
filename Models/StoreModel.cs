@@ -277,6 +277,10 @@
         public string Status { get; set; } = string.Empty;
         public string CancelReason { get; set; } = string.Empty;
         public DateTime? CancelledOn { get; set; }
+        /// <summary>Latest unpost (2026-11-17): remark typed by the user, who and when</summary>
+        public string UnPostRemark { get; set; } = string.Empty;
+        public DateTime? UnPostedOn { get; set; }
+        public string UnPostedByName { get; set; } = string.Empty;
         public DateTime? PostedOn { get; set; }
         public bool IsIssued { get; set; }
         public List<StockReceivingLineModel> Items { get; set; } = new();
@@ -390,4 +394,355 @@
         public int RoleId { get; set; }
         public string RoleName { get; set; } = string.Empty;
     }
+
+    #region Purchase Request (2026-11-16)
+
+    public class PurchaseRequestItemSearchModel
+    {
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string ItemCode { get; set; } = string.Empty;
+        public int Packing { get; set; }
+        public string PurchaseUnitName { get; set; } = string.Empty;
+        public string SaleUnitName { get; set; } = string.Empty;
+        /// <summary>From Department stock, sale units</summary>
+        public int CurrentStock { get; set; }
+        public int MinLevel { get; set; }
+        public int ReorderLevel { get; set; }
+        public int MaxLevel { get; set; }
+        /// <summary>Last landed cost per purchase unit in the branch (0 = never received)</summary>
+        public decimal Rate { get; set; }
+    }
+
+    public class PurchaseRequestListModel
+    {
+        public int PurchaseRequestId { get; set; }
+        public string PurchaseRequestNo { get; set; } = string.Empty;
+        public int BranchId { get; set; }
+        public int FromDeptId { get; set; }
+        public int ToDeptId { get; set; }
+        public int CategoryId { get; set; }
+        public string FromDeptName { get; set; } = string.Empty;
+        public string ToDeptName { get; set; } = string.Empty;
+        public string StoreType { get; set; } = string.Empty;
+        public string PrDate { get; set; } = string.Empty;
+        public string? Remarks { get; set; }
+        public int StatusId { get; set; }
+        public int IsCancel { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string CurrentApprover { get; set; } = string.Empty;
+        public int ItemCount { get; set; }
+        public int RequestedQty { get; set; }
+        public int ApprovedQty { get; set; }
+        public decimal TotalAmount { get; set; }
+        public decimal ApprovedAmount { get; set; }
+        /// <summary>Amount the approval rule is chosen by (fixed when sent)</summary>
+        public decimal ApprovalAmount { get; set; }
+        /// <summary>AmountUpTo of the matched approval rule (null = no rule)</summary>
+        public decimal? AmountUpTo { get; set; }
+        public string ApprovalRemarks { get; set; } = string.Empty;
+        public int? IsLevel1Approve { get; set; }
+        public string? Level1ApproveOn { get; set; }
+        public int? IsLevel2Approve { get; set; }
+        public string? Level2ApproveOn { get; set; }
+        public int? IsLevel3Approve { get; set; }
+        public string? Level3ApproveOn { get; set; }
+        public int? IsLevel4Approve { get; set; }
+        public string? Level4ApproveOn { get; set; }
+        public string? CancelBy { get; set; }
+        public string? CancelOn { get; set; }
+        public string? CancelReason { get; set; }
+        public string? CreatedBy { get; set; }
+        public string? CreatedOn { get; set; }
+        /// <summary>Approval level this user may approve now (0 = none)</summary>
+        public int FlagId { get; set; }
+        public int CanApprove { get; set; }
+    }
+
+    public class PurchaseRequestItemModel
+    {
+        public int PurchaseRequestItemId { get; set; }
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public int Packing { get; set; }
+        public string PurchaseUnitName { get; set; } = string.Empty;
+        public int RequestedQty { get; set; }
+        public int ApprovedQty { get; set; }
+        public decimal Rate { get; set; }
+        public decimal Amount { get; set; }
+        public decimal ApprovedAmount { get; set; }
+        public int CurrentStock { get; set; }
+        public int CurrentStockAllDept { get; set; }
+        public int MinLevel { get; set; }
+        public int ReorderLevel { get; set; }
+        public int MaxLevel { get; set; }
+    }
+
+    public class PurchaseRequestDetailsModel
+    {
+        public int PurchaseRequestId { get; set; }
+        public string PurchaseRequestNo { get; set; } = string.Empty;
+        public int BranchId { get; set; }
+        public int FromDeptId { get; set; }
+        public int ToDeptId { get; set; }
+        public int CategoryId { get; set; }
+        public string FromDeptName { get; set; } = string.Empty;
+        public string ToDeptName { get; set; } = string.Empty;
+        public string StoreType { get; set; } = string.Empty;
+        public string? CreatedOn { get; set; }
+        public string? CreatedBy { get; set; }
+        public string? Remarks { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public int StatusId { get; set; }
+        public int IsCancel { get; set; }
+        public string ApprovalRemarks { get; set; } = string.Empty;
+        public decimal TotalAmount { get; set; }
+        public decimal ApprovedAmount { get; set; }
+        public decimal ApprovalAmount { get; set; }
+        public decimal? AmountUpTo { get; set; }
+        public int? ApprovalFlowId { get; set; }
+        public string? ApprovalFlow { get; set; }
+        public int? IsAllApprovalRequired { get; set; }
+        public int? ApprovalLevelId { get; set; }
+        public string? ApprovalLevel { get; set; }
+        public string? Level1ApproverNames { get; set; }
+        public string? Level2ApproverNames { get; set; }
+        public string? Level3ApproverNames { get; set; }
+        public string? Level4ApproverNames { get; set; }
+        public int? IsLevel1Approve { get; set; }
+        public string? Level1ApprovedByName { get; set; }
+        public string? Level1ApproveOn { get; set; }
+        public int? IsLevel2Approve { get; set; }
+        public string? Level2ApprovedByName { get; set; }
+        public string? Level2ApproveOn { get; set; }
+        public int? IsLevel3Approve { get; set; }
+        public string? Level3ApprovedByName { get; set; }
+        public string? Level3ApproveOn { get; set; }
+        public int? IsLevel4Approve { get; set; }
+        public string? Level4ApprovedByName { get; set; }
+        public string? Level4ApproveOn { get; set; }
+        public string? CancelBy { get; set; }
+        public string? CancelOn { get; set; }
+        public string? CancelReason { get; set; }
+        public int FlagId { get; set; }
+        public List<PurchaseRequestItemModel> Items { get; set; } = new();
+    }
+
+    public class ItemDepartmentStockModel
+    {
+        public int RoleId { get; set; }
+        public string RoleName { get; set; } = string.Empty;
+        public int CurrentStock { get; set; }
+    }
+
+    public class PurchaseRequestSaveResponse
+    {
+        public int PurchaseRequestId { get; set; }
+    }
+
+    #endregion
+
+    #region Purchase Order (2026-11-16)
+
+    public class POTermConditionModel
+    {
+        public int Id { get; set; }
+        public string PoTermCondition { get; set; } = string.Empty;
+        public int SequenceOrder { get; set; }
+        public int IsDefault { get; set; }
+    }
+
+    /// <summary>line defaults: last GRN lot of the item in the branch (rate per pack, MRP, GST, HSN, vendor)</summary>
+    public class PurchaseOrderItemDefaultModel
+    {
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string ItemCode { get; set; } = string.Empty;
+        public int Packing { get; set; }
+        public string PurchaseUnitName { get; set; } = string.Empty;
+        public string HsnCode { get; set; } = string.Empty;
+        public decimal GstPer { get; set; }
+        public decimal Rate { get; set; }
+        public decimal Mrp { get; set; }
+        public int VendorId { get; set; }
+        public string VendorName { get; set; } = string.Empty;
+        /// <summary>ROL / PR: suggested or approved quantity in packs</summary>
+        public decimal Qty { get; set; }
+        public int BranchStock { get; set; }
+        public int ReorderLevel { get; set; }
+        public int MaxLevel { get; set; }
+        public string PurchaseRequestNos { get; set; } = string.Empty;
+    }
+
+    public class ApprovedPurchaseRequestForPoModel
+    {
+        public int PurchaseRequestId { get; set; }
+        public string PurchaseRequestNo { get; set; } = string.Empty;
+        public string PrDate { get; set; } = string.Empty;
+        public string FromDeptName { get; set; } = string.Empty;
+        public string ToDeptName { get; set; } = string.Empty;
+        public string StoreType { get; set; } = string.Empty;
+        public int ItemCount { get; set; }
+        public int ApprovedQty { get; set; }
+        public decimal ApprovedAmount { get; set; }
+    }
+
+    public class PurchaseOrderListModel
+    {
+        public int PoId { get; set; }
+        public string PoNo { get; set; } = string.Empty;
+        public int BranchId { get; set; }
+        public int RoleId { get; set; }
+        public string FromDeptName { get; set; } = string.Empty;
+        public string StoreType { get; set; } = string.Empty;
+        public string PoType { get; set; } = string.Empty;
+        public int TypeId { get; set; }
+        public string PoTypes { get; set; } = string.Empty;
+        public int VendorId { get; set; }
+        public string VendorName { get; set; } = string.Empty;
+        public string PoDate { get; set; } = string.Empty;
+        public string Priority { get; set; } = string.Empty;
+        public decimal GrossAmount { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal GstAmount { get; set; }
+        public decimal NetAmount { get; set; }
+        public decimal ApprovalAmount { get; set; }
+        public decimal? AmountUpTo { get; set; }
+        public int StatusId { get; set; }
+        public int IsCancel { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string CurrentApprover { get; set; } = string.Empty;
+        public int ItemCount { get; set; }
+        public decimal TotalQty { get; set; }
+        public string Remarks { get; set; } = string.Empty;
+        public string ApprovalRemarks { get; set; } = string.Empty;
+        public int? IsLevel1Approve { get; set; }
+        public string? Level1ApproveOn { get; set; }
+        public int? IsLevel2Approve { get; set; }
+        public string? Level2ApproveOn { get; set; }
+        public int? IsLevel3Approve { get; set; }
+        public string? Level3ApproveOn { get; set; }
+        public int? IsLevel4Approve { get; set; }
+        public string? Level4ApproveOn { get; set; }
+        public string? CancelBy { get; set; }
+        public string? CancelOn { get; set; }
+        public string? CancelReason { get; set; }
+        public string? CreatedBy { get; set; }
+        public string? CreatedOn { get; set; }
+        public int FlagId { get; set; }
+        public int CanApprove { get; set; }
+        public int CanEdit { get; set; }
+    }
+
+    public class PurchaseOrderItemModel
+    {
+        public int PoItemId { get; set; }
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string ItemCode { get; set; } = string.Empty;
+        public string PurchaseUnitName { get; set; } = string.Empty;
+        public decimal Qty { get; set; }
+        public decimal FreeQty { get; set; }
+        public int Packing { get; set; }
+        public int Deal1 { get; set; }
+        public int Deal2 { get; set; }
+        public string HsnCode { get; set; } = string.Empty;
+        public decimal Mrp { get; set; }
+        public decimal Rate { get; set; }
+        public decimal DiscPer { get; set; }
+        public decimal DiscAmt { get; set; }
+        public decimal SpclDiscPer { get; set; }
+        public decimal SpclDiscAmt { get; set; }
+        public decimal GstPer { get; set; }
+        public decimal GstAmt { get; set; }
+        public decimal GrossAmt { get; set; }
+        public decimal NetAmt { get; set; }
+        public decimal UnitCost { get; set; }
+    }
+
+    public class PurchaseOrderDetailsModel
+    {
+        public int PoId { get; set; }
+        public string PoNo { get; set; } = string.Empty;
+        public int BranchId { get; set; }
+        public int RoleId { get; set; }
+        public string FromDeptName { get; set; } = string.Empty;
+        public string StoreType { get; set; } = string.Empty;
+        public int CategoryId { get; set; }
+        public string PoType { get; set; } = string.Empty;
+        public int TypeId { get; set; }
+        public string PoTypes { get; set; } = string.Empty;
+        public int VendorId { get; set; }
+        public string VendorName { get; set; } = string.Empty;
+        public decimal GrossAmount { get; set; }
+        public decimal DiscountPercentage { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal TaxableAmount { get; set; }
+        public decimal GstAmount { get; set; }
+        public decimal NetAmount { get; set; }
+        public decimal RoundOff { get; set; }
+        public decimal ApprovalAmount { get; set; }
+        public decimal? AmountUpTo { get; set; }
+        public string Priority { get; set; } = string.Empty;
+        /// <summary>yyyy-MM-dd</summary>
+        public string PoDate { get; set; } = string.Empty;
+        public string? DeliveryDate { get; set; }
+        public string? ValidDate { get; set; }
+        public string PoRemarks { get; set; } = string.Empty;
+        public string DeliveryAddress { get; set; } = string.Empty;
+        public string DocumentPath { get; set; } = string.Empty;
+        public string OtherTermCondition { get; set; } = string.Empty;
+        public List<int> PurchaseRequestIds { get; set; } = new();
+        public string Status { get; set; } = string.Empty;
+        public int StatusId { get; set; }
+        public int IsCancel { get; set; }
+        public string ApprovalRemarks { get; set; } = string.Empty;
+        public string? CreatedOn { get; set; }
+        public string? CreatedBy { get; set; }
+        public int? ApprovalFlowId { get; set; }
+        public string? ApprovalFlow { get; set; }
+        public int? IsAllApprovalRequired { get; set; }
+        public int? ApprovalLevelId { get; set; }
+        public string? ApprovalLevel { get; set; }
+        public string? Level1ApproverNames { get; set; }
+        public string? Level2ApproverNames { get; set; }
+        public string? Level3ApproverNames { get; set; }
+        public string? Level4ApproverNames { get; set; }
+        public int? IsLevel1Approve { get; set; }
+        public string? Level1ApprovedByName { get; set; }
+        public string? Level1ApproveOn { get; set; }
+        public int? IsLevel2Approve { get; set; }
+        public string? Level2ApprovedByName { get; set; }
+        public string? Level2ApproveOn { get; set; }
+        public int? IsLevel3Approve { get; set; }
+        public string? Level3ApprovedByName { get; set; }
+        public string? Level3ApproveOn { get; set; }
+        public int? IsLevel4Approve { get; set; }
+        public string? Level4ApprovedByName { get; set; }
+        public string? Level4ApproveOn { get; set; }
+        public string? CancelBy { get; set; }
+        public string? CancelOn { get; set; }
+        public string? CancelReason { get; set; }
+        public int FlagId { get; set; }
+        public List<PurchaseOrderItemModel> Items { get; set; } = new();
+        public List<POTermConditionModel> Terms { get; set; } = new();
+    }
+
+    public class PurchaseOrderSavedModel
+    {
+        public int PoId { get; set; }
+        public string PoNo { get; set; } = string.Empty;
+        public string VendorName { get; set; } = string.Empty;
+        public decimal NetAmount { get; set; }
+        /// <summary>Save &amp; Send: false when this PO saved but could not be sent (message says why)</summary>
+        public bool Sent { get; set; }
+        public string? SendMessage { get; set; }
+    }
+
+    public class PurchaseOrderDocumentModel
+    {
+        public string DocumentPath { get; set; } = string.Empty;
+    }
+
+    #endregion
 }

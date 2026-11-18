@@ -78,6 +78,8 @@ namespace HISWEBAPI.Models
         public int? UserDepartmentId { get; set; }
         public int? UserRoleId { get; set; }
         public string? UserRole { get; set; }
+        /// <summary>1 = Yes (OTP verification popup at login when unverified), 0 = No.</summary>
+        public int IsContactVerificationRequired { get; set; } = 1;
     }
 
 

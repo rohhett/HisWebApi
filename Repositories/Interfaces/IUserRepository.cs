@@ -6,13 +6,13 @@ namespace HISWEBAPI.Repositories.Interfaces
 {
     public interface IUserRepository
     {
-        ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request, string? ipAddress = null);
-        ServiceResult<string> Logout(LogoutRequest request);
+        ServiceResult<UserLoginResponseData> UserLogin(UserLoginRequest request, string? ipAddress = null, string? userAgent = null, string? clientType = null);
+        ServiceResult<string> Logout(LogoutRequest request, long tokenSessionId, string? tokenJti, DateTime tokenExpiresUtc);
         ServiceResult<UserSignupResponseData> NewUserSignUp(UserSignupRequest request);
         ServiceResult<SmsOtpResponseData> SendSmsOtp(SendSmsOtpRequest request);
         ServiceResult<OtpVerificationResponseData> VerifySmsOtp(VerifySmsOtpRequest request);
         ServiceResult<EmailOtpResponseData> SendEmailOtp(SendEmailOtpRequest request);
-        ServiceResult<string> VerifyEmailOtp(VerifyEmailOtpRequest request);
+        ServiceResult<object> VerifyEmailOtp(VerifyEmailOtpRequest request);
         ServiceResult<string> ResetPasswordByUserId(ResetPasswordRequest request);
         ServiceResult<string> UpdatePassword(UpdatePasswordRequest request);
         ServiceResult<IEnumerable<UserRoleModel>> GetUserRoles(UserRoleRequest request);

@@ -105,6 +105,9 @@ namespace HISWEBAPI.DTO
         [StringLength(100)]
         public string UserRole { get; set; }
 
+        /// <summary>"Contact verification required on login": 1 = Yes (default), 0 = No.</summary>
+        public int IsContactVerificationRequired { get; set; } = 1;
+
     }
 
     public class UserMasterResponse

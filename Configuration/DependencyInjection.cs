@@ -76,6 +76,7 @@ public static class DependencyInjection
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IResponseMessageService, ResponseMessageService>();
         services.AddScoped<IPatientInvestigationReportPdfService, PatientInvestigationReportPdfService>();
+        services.AddScoped<ITokenRevocationService, TokenRevocationService>();
     }
 
     private static void RegisterUtilities(IServiceCollection services)

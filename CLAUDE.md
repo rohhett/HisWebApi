@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 HISWEBAPI is the backend for a Hospital Information System (HIS). It is an ASP.NET Core 8 Web API that talks to SQL Server through **stored procedures**. Its React/Vite frontend lives in a separate folder (`D:\@HISWEBAPI\Frontend\HIS-main`, base path `/GWSNHIS`), which has its own CLAUDE.md.
 
+## Design rules and skills (`.claude/`)
+Every new API must follow `.claude/rules/` (architecture, API coding rules, caching/logging/security, SQL) and be
+built with the skills in `.claude/skills/`: `new-master-api`, `new-transaction-api`, `sql-change-script`,
+`backend-review`. Overview: `.claude/README.md`. Reference build: Manufacturer Master.
+
 ## Commands
 
 ```bash

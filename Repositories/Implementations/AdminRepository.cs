@@ -387,6 +387,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     new SqlParameter("@CanChangePassword",request.CanChangePassword),
                     new SqlParameter("@UserRoleId",request.UserRoleId),
                     new SqlParameter("@UserRole", request.UserRole ?? (object)DBNull.Value),
+                    new SqlParameter("@IsContactVerificationRequired", request.IsContactVerificationRequired == 0 ? 0 : 1),
 
                     new SqlParameter("@Result", SqlDbType.BigInt) { Direction = ParameterDirection.Output }
                 };
@@ -549,6 +550,10 @@ namespace HISWEBAPI.Repositories.Implementations
                         UserDepartmentId = row.Field<int?>("UserDepartmentId"),
                         UserRoleId = row.Field<int?>("UserRoleId"),
                         UserRole = row.Field<string>("UserRole"),
+                        // column added by 2026-11-17_UserMaster_ContactVerificationRequired.sql; Yes until it exists
+                        IsContactVerificationRequired = row.Table.Columns.Contains("IsContactVerificationRequired")
+                            && row["IsContactVerificationRequired"] != DBNull.Value
+                                ? Convert.ToInt32(row["IsContactVerificationRequired"]) : 1,
                     }).ToList() ?? new List<UserMasterModel>();
 
                     // Store ALL users in cache (no expiration)

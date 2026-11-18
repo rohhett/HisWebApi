@@ -141,6 +141,13 @@ GO
 IF COL_LENGTH('dbo.StockReceiving', 'FreightCharges') IS NULL
     ALTER TABLE dbo.StockReceiving ADD FreightCharges decimal(18,2) NULL;
 GO
+IF COL_LENGTH('dbo.StockReceiving', 'UnPostRemark') IS NULL
+    ALTER TABLE dbo.StockReceiving ADD UnPostRemark nvarchar(1000) NULL;
+IF COL_LENGTH('dbo.StockReceiving', 'UnPostedBy') IS NULL
+    ALTER TABLE dbo.StockReceiving ADD UnPostedBy int NULL;
+IF COL_LENGTH('dbo.StockReceiving', 'UnPostedOn') IS NULL
+    ALTER TABLE dbo.StockReceiving ADD UnPostedOn datetime NULL;
+GO
 
 /* ---------- 2a. IU_StockReceiving ----------
    Header + all lines in one call. The API calls it inside its own SqlTransaction and computes
@@ -341,10 +348,14 @@ END
 GO
 
 CREATE OR ALTER PROCEDURE dbo.U_UnPostStockReceiving
-    @hospId int, @receivingId int, @userId int, @ipAddress nvarchar(50) = NULL, @Result int = NULL OUTPUT
+    @hospId int, @receivingId int, @remark nvarchar(1000) = NULL, @userId int, @ipAddress nvarchar(50) = NULL, @Result int = NULL OUTPUT
 AS
 BEGIN
     SET NOCOUNT ON;
+    SET @remark = NULLIF(LTRIM(RTRIM(@remark)), '');
+    IF @remark IS NULL
+    BEGIN SET @Result = -3; SELECT @Result; RETURN; END
+
     IF NOT EXISTS (SELECT 1 FROM dbo.StockReceiving WHERE Id = @receivingId AND HospId = @hospId AND StatusId = 2 AND IsCancel = 0)
     BEGIN SET @Result = -2; SELECT @Result; RETURN; END
 
@@ -356,6 +367,7 @@ BEGIN
     UPDATE dbo.Stock SET IsActive = 0, LastModifiedBy = @userId, LastModifiedOn = GETDATE(), IpAddress = @ipAddress
     WHERE ReceivingId = @receivingId AND IsActive = 1;
     UPDATE dbo.StockReceiving SET StatusId = 1, PostedBy = NULL, PostedOn = NULL,
+        UnPostRemark = @remark, UnPostedBy = @userId, UnPostedOn = GETDATE(),
         LastModifiedBy = @userId, LastModifiedOn = GETDATE(), IpAddress = @ipAddress
     WHERE Id = @receivingId;
 
@@ -430,11 +442,13 @@ BEGIN
            sr.GrossAmount, sr.DiscountPercentage, sr.DiscountAmount, sr.TaxableAmount, sr.GSTAmount, sr.NetAmount, sr.RoundOff,
            sr.StatusId, CASE sr.StatusId WHEN 1 THEN 'Draft' WHEN 2 THEN 'Posted' WHEN 3 THEN 'Cancelled' END AS Status,
            sr.CancelReason, sr.CancelledOn, sr.PostedOn,
+           sr.UnPostRemark, sr.UnPostedOn, ISNULL(uu.Name, '') AS UnPostedByName,
            CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.Stock s WHERE s.ReceivingId = sr.Id AND s.IsActive = 1
                                   AND (s.IssuedQTY > 0 OR s.ReturnedQTY > 0)) THEN 1 ELSE 0 END AS int) AS IsIssued
     FROM dbo.StockReceiving sr
     LEFT JOIN dbo.VendorMaster vm ON vm.VendorId = sr.VendorId
     LEFT JOIN dbo.RoleMaster rm   ON rm.RoleId = sr.RoleId
+    LEFT JOIN dbo.UserMaster uu   ON uu.Id = sr.UnPostedBy
     WHERE sr.Id = @receivingId AND sr.HospId = @hospId;
 
     /* 2. lines (current lots: not superseded by an edit) */

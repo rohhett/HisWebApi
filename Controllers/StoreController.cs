@@ -7,6 +7,7 @@ using HISWEBAPI.DTO;
 using HISWEBAPI.Models;
 using HISWEBAPI.Services;
 using HISWEBAPI.Configuration;
+using HISWEBAPI.Utilities;
 using MimeKit.Encodings;
 
 namespace HISWEBAPI.Controllers
@@ -682,6 +683,252 @@ namespace HISWEBAPI.Controllers
                 errors = errors ?? ModelState
             });
         }
+
+        #region Purchase Request (2026-11-16)
+
+        private static readonly string[] PurchaseRequestStoreTypes = { "Medical", "General" };
+
+        private static string? NormalizePrStoreType(string? storeType) =>
+            PurchaseRequestStoreTypes.FirstOrDefault(t => t.Equals(storeType?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>To Department list: active roles of the hospital</summary>
+        [HttpGet("getPurchaseRequestDepartments")]
+        [Authorize]
+        public IActionResult GetPurchaseRequestDepartments() =>
+            Respond(_storeRepository.GetPurchaseRequestDepartments(GlobalFunctions.GetGlobalValues(HttpContext)));
+
+        /// <summary>Item search for the request grid; belowReorderLevel=true is OLD "Get Item by ROL"</summary>
+        [HttpGet("searchPurchaseRequestItem")]
+        [Authorize]
+        public IActionResult SearchPurchaseRequestItem(
+            [FromQuery] int branchId, [FromQuery] int fromDeptId, [FromQuery] string storeType = "Medical",
+            [FromQuery] string? search = null, [FromQuery] bool belowReorderLevel = false)
+        {
+            string? type = NormalizePrStoreType(storeType);
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            if (fromDeptId <= 0) return ValidationFailed(new { fromDeptId }, "Please select From Department");
+            if (type == null) return ValidationFailed(new { storeType }, "Store Type must be Medical or General");
+            if (search != null && search.Length > 100) return ValidationFailed(new { search }, "Search text is too long");
+            if (!belowReorderLevel && (search?.Trim().Length ?? 0) < 2) return ValidationFailed(new { search }, "Type at least 2 characters to search");
+            return Respond(_storeRepository.SearchPurchaseRequestItem(branchId, fromDeptId, type, search, belowReorderLevel, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Requests of a branch for both pages; FlagId / CanApprove are for the calling user</summary>
+        [HttpGet("getPurchaseRequestList")]
+        [Authorize]
+        public IActionResult GetPurchaseRequestList(
+            [FromQuery] int branchId, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null,
+            [FromQuery] int? fromDeptId = null, [FromQuery] int? toDeptId = null, [FromQuery] string? storeType = null,
+            [FromQuery] int? statusId = null, [FromQuery] string? prNo = null)
+        {
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            DateTime from = (fromDate ?? DateTime.Today).Date, to = (toDate ?? DateTime.Today).Date;
+            if (from > to) return ValidationFailed(new { fromDate, toDate }, "From Date cannot be after To Date");
+            if ((to - from).TotalDays > 366) return ValidationFailed(new { fromDate, toDate }, "Date range can be at most one year");
+            string? type = null;
+            if (!string.IsNullOrWhiteSpace(storeType))
+            {
+                type = NormalizePrStoreType(storeType);
+                if (type == null) return ValidationFailed(new { storeType }, "Store Type must be Medical or General");
+            }
+            if (statusId.HasValue && statusId is not (0 or 1 or 2 or 3)) return ValidationFailed(new { statusId }, "Status must be 0 Draft, 1 Cancelled, 2 Approval Pending or 3 Approved");
+            if (prNo != null && prNo.Length > 50) return ValidationFailed(new { prNo }, "PR No is too long");
+            return Respond(_storeRepository.GetPurchaseRequestList(branchId, from, to, fromDeptId, toDeptId, type, statusId, prNo, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPurchaseRequestDetails")]
+        [Authorize]
+        public IActionResult GetPurchaseRequestDetails([FromQuery] int purchaseRequestId)
+        {
+            if (purchaseRequestId <= 0) return ValidationFailed(new { purchaseRequestId }, "PurchaseRequestId is required");
+            return Respond(_storeRepository.GetPurchaseRequestDetails(purchaseRequestId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Current stock of one item in every department of the branch</summary>
+        [HttpGet("getItemStockByDepartment")]
+        [Authorize]
+        public IActionResult GetItemStockByDepartment([FromQuery] int branchId, [FromQuery] int itemId)
+        {
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            if (itemId <= 0) return ValidationFailed(new { itemId }, "ItemId is required");
+            return Respond(_storeRepository.GetItemStockByDepartment(branchId, itemId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Save a new request or update a Draft (header + all items, one transaction)</summary>
+        [HttpPost("savePurchaseRequest")]
+        [Authorize]
+        [RequestSizeLimit(2_000_000)]
+        public IActionResult SavePurchaseRequest([FromBody] PurchaseRequestSaveRequest request)
+        {
+            _log.Info($"SavePurchaseRequest called. PurchaseRequestId={request.PurchaseRequestId}, FromDept={request.FromDeptId}");
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.SavePurchaseRequest(request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Draft -> Approval Pending</summary>
+        [HttpPost("sendPurchaseRequestForApproval")]
+        [Authorize]
+        public IActionResult SendPurchaseRequestForApproval([FromBody] PurchaseRequestActionRequest request)
+        {
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.ChangePurchaseRequestStatus("send", request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpPost("cancelPurchaseRequest")]
+        [Authorize]
+        public IActionResult CancelPurchaseRequest([FromBody] PurchaseRequestActionRequest request)
+        {
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.ChangePurchaseRequestStatus("cancel", request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Approve the current level; the server checks the user is an approver of that level</summary>
+        [HttpPatch("approvePurchaseRequest")]
+        [Authorize]
+        public IActionResult ApprovePurchaseRequest([FromBody] PurchaseRequestApproveRequest request)
+        {
+            _log.Info($"ApprovePurchaseRequest called. PurchaseRequestId={request?.PurchaseRequestId}, Flag={request?.Flag}");
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.ApprovePurchaseRequest(request!, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        #endregion
+
+        #region Purchase Order (2026-11-16)
+
+        private static bool IsValidIdCsv(string? csv, int max) =>
+            !string.IsNullOrWhiteSpace(csv) && csv.Length <= 4000 &&
+            csv.Split(',', StringSplitOptions.RemoveEmptyEntries) is var parts && parts.Length > 0 && parts.Length <= max &&
+            parts.All(p => int.TryParse(p.Trim(), out var v) && v > 0);
+
+        [HttpGet("getPOTermConditions")]
+        [Authorize]
+        public IActionResult GetPOTermConditions() =>
+            Respond(_storeRepository.GetPOTermConditions(GlobalFunctions.GetGlobalValues(HttpContext)));
+
+        /// <summary>Line defaults (last GRN rate/MRP/GST/vendor) for picked items, or OLD "Get Item by ROL" with belowReorderLevel=true</summary>
+        [HttpGet("getPurchaseOrderItemDefaults")]
+        [Authorize]
+        public IActionResult GetPurchaseOrderItemDefaults([FromQuery] int branchId, [FromQuery] string storeType = "Medical",
+            [FromQuery] string? itemIds = null, [FromQuery] bool belowReorderLevel = false)
+        {
+            string? type = NormalizePrStoreType(storeType);
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            if (type == null) return ValidationFailed(new { storeType }, "Store Type must be Medical or General");
+            if (!belowReorderLevel && !IsValidIdCsv(itemIds, 500)) return ValidationFailed(new { itemIds }, "itemIds must be a comma separated list of item ids");
+            return Respond(_storeRepository.GetPurchaseOrderItemDefaults(branchId, type, belowReorderLevel ? null : itemIds, belowReorderLevel, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>OLD "Check Purchase Request": approved requests not yet used by a PO</summary>
+        [HttpGet("getApprovedPurchaseRequestsForPO")]
+        [Authorize]
+        public IActionResult GetApprovedPurchaseRequestsForPo([FromQuery] int branchId, [FromQuery] string storeType = "Medical",
+            [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null, [FromQuery] int? fromDeptId = null)
+        {
+            string? type = NormalizePrStoreType(storeType);
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            if (type == null) return ValidationFailed(new { storeType }, "Store Type must be Medical or General");
+            DateTime from = (fromDate ?? DateTime.Today.AddDays(-30)).Date, to = (toDate ?? DateTime.Today).Date;
+            if (from > to) return ValidationFailed(new { fromDate, toDate }, "From Date cannot be after To Date");
+            if ((to - from).TotalDays > 366) return ValidationFailed(new { fromDate, toDate }, "Date range can be at most one year");
+            return Respond(_storeRepository.GetApprovedPurchaseRequestsForPo(branchId, type, from, to, fromDeptId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPurchaseRequestItemsForPO")]
+        [Authorize]
+        public IActionResult GetPurchaseRequestItemsForPo([FromQuery] int branchId, [FromQuery] string? purchaseRequestIds)
+        {
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            if (!IsValidIdCsv(purchaseRequestIds, 100)) return ValidationFailed(new { purchaseRequestIds }, "Please Select at least one Purchase Request");
+            return Respond(_storeRepository.GetPurchaseRequestItemsForPo(branchId, purchaseRequestIds!, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>POs of a branch for both pages; FlagId / CanApprove / CanEdit are for the calling user</summary>
+        [HttpGet("getPurchaseOrderList")]
+        [Authorize]
+        public IActionResult GetPurchaseOrderList(
+            [FromQuery] int branchId, [FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null,
+            [FromQuery] string? storeType = null, [FromQuery] int? vendorId = null, [FromQuery] int? statusId = null, [FromQuery] string? poNo = null)
+        {
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            DateTime from = (fromDate ?? DateTime.Today).Date, to = (toDate ?? DateTime.Today).Date;
+            if (from > to) return ValidationFailed(new { fromDate, toDate }, "From Date cannot be after To Date");
+            if ((to - from).TotalDays > 366) return ValidationFailed(new { fromDate, toDate }, "Date range can be at most one year");
+            string? type = null;
+            if (!string.IsNullOrWhiteSpace(storeType))
+            {
+                type = NormalizePrStoreType(storeType);
+                if (type == null) return ValidationFailed(new { storeType }, "Store Type must be Medical or General");
+            }
+            if (statusId.HasValue && statusId is not (0 or 1 or 2 or 3)) return ValidationFailed(new { statusId }, "Status must be 0 Draft, 1 Cancelled, 2 Approval Pending or 3 Approved");
+            if (poNo != null && poNo.Length > 50) return ValidationFailed(new { poNo }, "PO No is too long");
+            return Respond(_storeRepository.GetPurchaseOrderList(branchId, from, to, type, vendorId, statusId, poNo, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPurchaseOrderDetails")]
+        [Authorize]
+        public IActionResult GetPurchaseOrderDetails([FromQuery] int poId)
+        {
+            if (poId <= 0) return ValidationFailed(new { poId }, "PoId is required");
+            return Respond(_storeRepository.GetPurchaseOrderDetails(poId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Save new (one PO per vendor) or update a Draft; SendForApproval=true is Save &amp; Send</summary>
+        [HttpPost("savePurchaseOrder")]
+        [Authorize]
+        [RequestSizeLimit(2_000_000)]
+        public IActionResult SavePurchaseOrder([FromBody] PurchaseOrderSaveRequest request)
+        {
+            _log.Info($"SavePurchaseOrder called. PoId={request?.PoId}, Lines={request?.Items?.Count ?? 0}");
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.SavePurchaseOrder(request!, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpPost("sendPurchaseOrderForApproval")]
+        [Authorize]
+        public IActionResult SendPurchaseOrderForApproval([FromBody] PurchaseOrderActionRequest request)
+        {
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.ChangePurchaseOrderStatus("send", request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpPost("cancelPurchaseOrder")]
+        [Authorize]
+        public IActionResult CancelPurchaseOrder([FromBody] PurchaseOrderActionRequest request)
+        {
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.ChangePurchaseOrderStatus("cancel", request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpPatch("approvePurchaseOrder")]
+        [Authorize]
+        public IActionResult ApprovePurchaseOrder([FromBody] PurchaseOrderApproveRequest request)
+        {
+            _log.Info($"ApprovePurchaseOrder called. PoId={request?.PoId}, Flag={request?.Flag}");
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.ApprovePurchaseOrder(request!, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>PO document (OLD fileUpload); returns the DMS path to send back in savePurchaseOrder.DocumentPath. View with Home/getFile.</summary>
+        [HttpPost("uploadPurchaseOrderDocument")]
+        [Authorize]
+        [RequestSizeLimit(30_000_000)]
+        public IActionResult UploadPurchaseOrderDocument([FromForm] PurchaseOrderDocumentRequest request)
+        {
+            if (!ModelState.IsValid || request.UploadFile == null || request.UploadFile.Length == 0)
+                return ValidationFailed(new { uploadFile = "File cannot be empty" }, "Document file is required");
+            var helper = HttpContext.RequestServices.GetRequiredService<FileUploadHelper>();
+            var (ok, filePath, error) = helper.UploadFile(request.UploadFile, "UploadedDocument");
+            if (!ok)
+            {
+                var fail = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                return BadRequest(new { result = false, messageType = fail.Type, message = error, data = (object?)null });
+            }
+            var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+            return Ok(new { result = true, messageType = alert.Type, message = "Document uploaded", data = new PurchaseOrderDocumentModel { DocumentPath = filePath } });
+        }
+
+        #endregion
 
         private static bool IsValidActiveFilter(int? isActive) => !isActive.HasValue || isActive.Value == 0 || isActive.Value == 1;
 

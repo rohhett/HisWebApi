@@ -18,7 +18,7 @@ namespace HISWEBAPI.Services
         }
 
         // Updated to include hospId and branchId
-        public string GenerateToken(int userId, string userName, string name, int hospId)
+        public string GenerateToken(int userId, string userName, string name, int hospId, long sessionId = 0)
         {
             var claims = new List<Claim>
             {
@@ -30,6 +30,10 @@ namespace HISWEBAPI.Services
                     new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                     new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString())
             };
+
+            // UserLoginSessions.SessionId: lets logout close this session and cancel the token
+            if (sessionId > 0)
+                claims.Add(new Claim("sessionId", sessionId.ToString()));
                             
 
 

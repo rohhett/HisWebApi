@@ -53,7 +53,11 @@ namespace HISWEBAPI.Controllers
                 });
             }
 
-            var serviceResult = _userRepository.UserLogin(request, HttpContext.Connection.RemoteIpAddress?.ToString());
+            var serviceResult = _userRepository.UserLogin(
+                request,
+                HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Request.Headers.UserAgent.ToString(),
+                HttpContext.Items["ClientType"] as string); // "Web", or the app's X-Client-Type header
 
             if (serviceResult.Result)
                 _log.Info($"User login successful: {serviceResult.Message}");
@@ -90,7 +94,14 @@ namespace HISWEBAPI.Controllers
                 });
             }
 
-            var serviceResult = _userRepository.Logout(request);
+            // the token being logged out: its id (jti), expiry (exp) and login session (sessionId)
+            string? jti = User.FindFirst("jti")?.Value;
+            long.TryParse(User.FindFirst("sessionId")?.Value, out long tokenSessionId);
+            DateTime expiresUtc = long.TryParse(User.FindFirst("exp")?.Value, out long exp)
+                ? DateTimeOffset.FromUnixTimeSeconds(exp).UtcDateTime
+                : DateTime.UtcNow.AddDays(1); // no exp claim: keep the block long enough
+
+            var serviceResult = _userRepository.Logout(request ?? new LogoutRequest(), tokenSessionId, jti, expiresUtc);
 
             if (serviceResult.Result)
                 _log.Info($"User logout successful: {serviceResult.Message}");
