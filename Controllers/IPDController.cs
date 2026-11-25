@@ -1866,6 +1866,101 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        // ================= Consent Form (IPD tab, 2026-11-24) =================
+        [HttpPost("savePatientConsentForm")]
+        [Authorize]
+        public IActionResult SavePatientConsentForm([FromBody] SavePatientConsentFormRequest request)
+        {
+            _log.Info($"SavePatientConsentForm called. VisitId={request.VisitId}, PatientFormId={request.PatientFormId}, Mode={request.UploadMode}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for consent form save.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            if (!request.FilePath.Trim().EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "Only PDF file is allowed", errors = new { filePath = request.FilePath } });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.SavePatientConsentForm(request, globalValues);
+
+            if (serviceResult.Result) _log.Info($"Consent form saved: {serviceResult.Message}");
+            else _log.Warn($"Consent form save failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPatch("updatePatientConsentForm")]
+        [Authorize]
+        public IActionResult UpdatePatientConsentForm([FromBody] UpdatePatientConsentFormRequest request)
+        {
+            _log.Info($"UpdatePatientConsentForm called. VisitId={request.VisitId}, PatientConsentFormId={request.PatientConsentFormId}");
+
+            if (!ModelState.IsValid)
+            {
+                _log.Warn("Invalid model state for consent form update.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            if (!request.FilePath.Trim().EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "Only PDF file is allowed", errors = new { filePath = request.FilePath } });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _ipdRepository.UpdatePatientConsentForm(request, globalValues);
+
+            if (serviceResult.Result) _log.Info($"Consent form updated: {serviceResult.Message}");
+            else _log.Warn($"Consent form update failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getPatientConsentFormList")]
+        [Authorize]
+        public IActionResult GetPatientConsentFormList([FromQuery] int visitId)
+        {
+            _log.Info($"GetPatientConsentFormList called. VisitId={visitId}");
+
+            if (visitId <= 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "VisitId must be greater than 0", errors = new { visitId } });
+            }
+
+            var serviceResult = _ipdRepository.GetPatientConsentFormList(visitId);
+
+            if (serviceResult.Result) _log.Info($"Consent forms fetched: {serviceResult.Message}");
+            else _log.Warn($"No consent forms found: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpGet("getPatientOTNotesByVisitId")]
         [Authorize]
         public IActionResult GetPatientOTNotesByVisitId([FromQuery] int visitId)

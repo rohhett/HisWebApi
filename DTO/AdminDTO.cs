@@ -2133,4 +2133,27 @@ namespace HISWEBAPI.DTO
         /// <summary>0 = ignored (filtered out before insert)</summary>
         public int OTProcessId { get; set; }
     }
+
+    // ================= Patient Form Master (2026-11-24) =================
+    public class CreateUpdatePatientFormRequest
+    {
+        public int PatientFormId { get; set; } = 0;               // 0 = insert, >0 = update
+
+        [Required(ErrorMessage = "Form name is required")]
+        [StringLength(200, ErrorMessage = "Form name cannot exceed 200 characters")]
+        public string FormName { get; set; }
+
+        /// <summary>Path returned by POST Home/uploadDocument (PDF only).</summary>
+        [Required(ErrorMessage = "Form file is required")]
+        [StringLength(500, ErrorMessage = "File path cannot exceed 500 characters")]
+        public string FilePath { get; set; }
+
+        [Required(ErrorMessage = "IsActive is required")]
+        public int IsActive { get; set; } = 1;
+    }
+
+    public class CreateUpdatePatientFormResponse
+    {
+        public int PatientFormId { get; set; }
+    }
 }

@@ -499,5 +499,18 @@ namespace HISWEBAPI.Models
 
     }
 
+    // ================= Patient Form Master (2026-11-24) =================
+    public class PatientFormMasterModel
+    {
+        public int PatientFormId { get; set; }
+        public string FormName { get; set; } = string.Empty;
+        public string FilePath { get; set; } = string.Empty;
+        public int IsActive { get; set; }
+        public string CreatedBy { get; set; } = string.Empty;
+        public string CreatedOn { get; set; } = string.Empty;
+        public string LastModifiedBy { get; set; } = string.Empty;
+        public string LastModifiedOn { get; set; } = string.Empty;
+    }
+
 
 }

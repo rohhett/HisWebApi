@@ -15,6 +15,8 @@ so that new code looks exactly like the existing code.
 | `skills/sql-change-script/` | Write the re-runnable `Database/YYYY-MM-DD_<Feature>.sql` script | `/sql-change-script` |
 | `skills/backend-review/` | Checklist to run before calling a backend change done | `/backend-review` |
 
+| `agents/backend-agent.md` | One agent that designs, writes (SQL, DTO, repository, controller, DI) and reviews a backend feature | `backend-agent` |
+
 Reference builds (copy these, they are the cleanest examples):
 - **Master:** Manufacturer Master — `StoreController.CreateUpdateManufacturerMaster` / `GetManufacturerList`,
   `StoreRepository.cs`, `StoreDTO.cs`, `StoreModel.cs`, `Database/2026-11-13_ManufacturerMaster.sql`.

@@ -6397,5 +6397,66 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+
+        // ================= Patient Form Master (2026-11-24) =================
+        [HttpPost("createUpdatePatientForm")]
+        [Authorize]
+        public IActionResult CreateUpdatePatientForm([FromBody] CreateUpdatePatientFormRequest request)
+        {
+            _log.Info($"CreateUpdatePatientForm called. PatientFormId={request.PatientFormId}, FormName={request.FormName}");
+
+            if (!ModelState.IsValid || string.IsNullOrWhiteSpace(request.FormName) || string.IsNullOrWhiteSpace(request.FilePath))
+            {
+                _log.Warn("Invalid model state for patient form insert/update.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            if (request.IsActive != 0 && request.IsActive != 1)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "IsActive must be 0 or 1", errors = new { isActive = request.IsActive } });
+            }
+
+            if (!request.FilePath.Trim().EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "Only PDF file is allowed", errors = new { filePath = request.FilePath } });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.CreateUpdatePatientForm(request, globalValues);
+
+            if (serviceResult.Result) _log.Info($"Patient form operation completed: {serviceResult.Message}");
+            else _log.Warn($"Patient form operation failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getPatientFormList")]
+        [Authorize]
+        public IActionResult GetPatientFormList([FromQuery] int? patientFormId = null, [FromQuery] int? isActive = null)
+        {
+            _log.Info($"GetPatientFormList called. PatientFormId={patientFormId?.ToString() ?? "All"}, IsActive={isActive?.ToString() ?? "All"}");
+
+            var serviceResult = _adminRepository.GetPatientFormList(patientFormId, isActive);
+
+            if (serviceResult.Result) _log.Info($"Patient forms fetched: {serviceResult.Message}");
+            else _log.Warn($"No patient forms found: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
     }
 }

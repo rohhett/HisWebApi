@@ -1162,5 +1162,136 @@ namespace HISWEBAPI.Controllers
             if (!ModelState.IsValid) return ValidationFailed();
             return Respond(_storeRepository.ChangeStockReceivingStatus("cancel", request, GlobalFunctions.GetGlobalValues(HttpContext)));
         }
+
+        // ================= Patient Medicine Issue (pharmacy sale / IPD issue, 2026-11-23) =================
+
+        /// <summary>patientTypeId 1 = OPD (registered patients, min 2 chars), 2 = admitted IPD patients.</summary>
+        [HttpGet("searchPatientForSale")]
+        [Authorize]
+        public IActionResult SearchPatientForSale([FromQuery] int branchId, [FromQuery] int patientTypeId = 1, [FromQuery] string? search = null)
+        {
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            if (patientTypeId != 1 && patientTypeId != 2) return ValidationFailed(new { patientTypeId }, "PatientTypeId must be 1 (OPD) or 2 (IPD)");
+            if (search != null && search.Length > 100) return ValidationFailed(new { search }, "Search text is too long");
+            return Respond(_storeRepository.SearchPatientForSale(branchId, patientTypeId, search, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>searchType 1 = name, 2 = barcode / code, 3 = salt (OLD S_SearchMadicineItem).</summary>
+        [HttpGet("searchSaleItem")]
+        [Authorize]
+        public IActionResult SearchSaleItem([FromQuery] int branchId, [FromQuery] int roleId, [FromQuery] string? search, [FromQuery] int searchType = 1)
+        {
+            if (branchId <= 0 || roleId <= 0) return ValidationFailed(new { branchId, roleId }, "Branch and store are required");
+            if (string.IsNullOrWhiteSpace(search) || search.Trim().Length < 2 || search.Length > 100)
+                return ValidationFailed(new { search }, "Enter 2 to 100 characters to search");
+            if (searchType < 1 || searchType > 3) return ValidationFailed(new { searchType }, "SearchType must be 1, 2 or 3");
+            return Respond(_storeRepository.SearchSaleItem(branchId, roleId, search, searchType, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>FEFO batches with stock of one or more items (comma-separated ids).</summary>
+        [HttpGet("getSaleItemBatches")]
+        [Authorize]
+        public IActionResult GetSaleItemBatches([FromQuery] int branchId, [FromQuery] int roleId, [FromQuery] string? itemIds)
+        {
+            if (branchId <= 0 || roleId <= 0) return ValidationFailed(new { branchId, roleId }, "Branch and store are required");
+            var ids = (itemIds ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (ids.Length == 0 || ids.Length > 200 || ids.Any(i => !int.TryParse(i, out var v) || v <= 0))
+                return ValidationFailed(new { itemIds }, "ItemIds must be 1-200 comma-separated ids");
+            return Respond(_storeRepository.GetSaleItemBatches(branchId, roleId, string.Join(",", ids), GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPharmacyUserRights")]
+        [Authorize]
+        public IActionResult GetPharmacyUserRights([FromQuery] int branchId, [FromQuery] int roleId)
+        {
+            if (branchId <= 0 || roleId <= 0) return ValidationFailed(new { branchId, roleId }, "Branch and store are required");
+            return Respond(_storeRepository.GetPharmacyUserRights(branchId, roleId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPharmacySaleList")]
+        [Authorize]
+        public IActionResult GetPharmacySaleList([FromQuery] int branchId, [FromQuery] DateTime fromDate, [FromQuery] DateTime toDate,
+            [FromQuery] int? roleId = null, [FromQuery] int? patientTypeId = null, [FromQuery] string? search = null)
+        {
+            if (branchId <= 0) return ValidationFailed(new { branchId }, "BranchId must be greater than 0");
+            if (fromDate == default || toDate == default || fromDate.Date > toDate.Date) return ValidationFailed(new { fromDate, toDate }, "Select a valid date range");
+            if ((toDate.Date - fromDate.Date).TotalDays > 366) return ValidationFailed(new { fromDate, toDate }, "Date range cannot exceed one year");
+            return Respond(_storeRepository.GetPharmacySaleList(branchId, roleId, fromDate, toDate, patientTypeId, search, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPharmacySaleDetails")]
+        [Authorize]
+        public IActionResult GetPharmacySaleDetails([FromQuery] int storeBillId)
+        {
+            if (storeBillId <= 0) return ValidationFailed(new { storeBillId }, "StoreBillId must be greater than 0");
+            return Respond(_storeRepository.GetPharmacySaleDetails(storeBillId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPharmacyRequestCounts")]
+        [Authorize]
+        public IActionResult GetPharmacyRequestCounts([FromQuery] int branchId, [FromQuery] int roleId)
+        {
+            if (branchId <= 0 || roleId <= 0) return ValidationFailed(new { branchId, roleId }, "Branch and store are required");
+            return Respond(_storeRepository.GetPharmacyRequestCounts(branchId, roleId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>type = emr (doctor prescriptions) | indent (ward indents) | discharge (take-home medicines); statusId 1 pending, 2 done, empty = all.</summary>
+        [HttpGet("getPharmacyRequests")]
+        [Authorize]
+        public IActionResult GetPharmacyRequests([FromQuery] string type, [FromQuery] int branchId, [FromQuery] int roleId,
+            [FromQuery] int? statusId = null, [FromQuery] string? search = null)
+        {
+            type = (type ?? "").Trim().ToLowerInvariant();
+            if (type != "emr" && type != "indent" && type != "discharge") return ValidationFailed(new { type }, "Type must be emr, indent or discharge");
+            if (branchId <= 0 || roleId <= 0) return ValidationFailed(new { branchId, roleId }, "Branch and store are required");
+            if (search != null && search.Length > 100) return ValidationFailed(new { search }, "Search text is too long");
+            return Respond(_storeRepository.GetPharmacyRequests(type, branchId, roleId, statusId, search, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpGet("getPharmacyRequestItems")]
+        [Authorize]
+        public IActionResult GetPharmacyRequestItems([FromQuery] string type, [FromQuery] int branchId, [FromQuery] int roleId, [FromQuery] int requestId)
+        {
+            type = (type ?? "").Trim().ToLowerInvariant();
+            if (type != "emr" && type != "indent" && type != "discharge") return ValidationFailed(new { type }, "Type must be emr, indent or discharge");
+            if (branchId <= 0 || roleId <= 0 || requestId <= 0) return ValidationFailed(new { branchId, roleId, requestId }, "Branch, store and request are required");
+            return Respond(_storeRepository.GetPharmacyRequestItems(type, branchId, roleId, requestId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>OPD / walk-in sale or IPD issue (one transaction): visit, bill, FT + lines, stock, receipt, indent bookkeeping.</summary>
+        [HttpPost("savePharmacySale")]
+        [Authorize]
+        public IActionResult SavePharmacySale([FromBody] PharmacySaleSaveRequest request)
+        {
+            _log.Info($"SavePharmacySale called. Type={request.PatientTypeId}, PatientId={request.PatientId}, Lines={request.Items?.Count ?? 0}");
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.SavePharmacySale(request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpPatch("rejectPatientIndent")]
+        [Authorize]
+        public IActionResult RejectPatientIndent([FromBody] RejectPatientIndentRequest request)
+        {
+            if (!ModelState.IsValid || string.IsNullOrWhiteSpace(request.Reason)) return ValidationFailed();
+            return Respond(_storeRepository.RejectPatientIndent(request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Count a bill slip print (first = original, later = duplicate reprint).</summary>
+        [HttpPatch("printPharmacyBill")]
+        [Authorize]
+        public IActionResult PrintPharmacyBill([FromBody] PharmacyBillPrintRequest request)
+        {
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.PrintPharmacyBill(request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        /// <summary>Raise a ward (IPD) medicine indent to a store.</summary>
+        [HttpPost("savePatientMedicineIndent")]
+        [Authorize]
+        public IActionResult SavePatientMedicineIndent([FromBody] SavePatientMedicineIndentRequest request)
+        {
+            if (!ModelState.IsValid) return ValidationFailed();
+            return Respond(_storeRepository.SavePatientMedicineIndent(request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
     }
 }

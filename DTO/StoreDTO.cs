@@ -668,4 +668,131 @@ namespace HISWEBAPI.DTO
     }
 
     #endregion
+
+    // ================= Patient Medicine Issue (pharmacy sale / IPD issue, 2026-11-23) =================
+
+    public class PharmacySaleItemRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Batch (StockId) is required")]
+        public int StockId { get; set; }
+
+        [Range(1, 999999, ErrorMessage = "Quantity must be between 1 and 999999")]   // OLD numbersOnly(this, event, 6)
+        public int Qty { get; set; }
+
+        [Range(0, 100, ErrorMessage = "Discount % must be 0-100")]
+        public decimal DiscPer { get; set; }
+
+        /// <summary>Ward indent line being issued (source = Ward Indent).</summary>
+        public int? IndentItemId { get; set; }
+    }
+
+    public class PharmacySaleRejectRequest
+    {
+        [Range(1, int.MaxValue)] public int IndentItemId { get; set; }
+        [Range(1, 999999)] public int Qty { get; set; }
+        [MaxLength(256)] public string? Reason { get; set; }
+    }
+
+    public class PharmacySalePaymentRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Payment mode is required")]
+        public int PaymentModeId { get; set; }
+        [Range(0, 99999999)] public decimal Amount { get; set; }
+        public int? BankId { get; set; }
+        [MaxLength(100)] public string? RefNo { get; set; }
+    }
+
+    public class PharmacySaleSaveRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Branch is required")]
+        public int BranchId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Store is required")]
+        public int RoleId { get; set; }
+
+        /// <summary>1 OPD / walk-in counter sale, 2 IPD issue (posted to the IP bill)</summary>
+        [Range(1, 2, ErrorMessage = "Patient type must be OPD or IPD")]
+        public int PatientTypeId { get; set; } = 1;
+
+        public int PatientId { get; set; } = 0;     // 0 = walk-in (OPD only)
+        public int VisitId { get; set; } = 0;       // IPD admission visit
+
+        // walk-in patient (OLD General patient)
+        [MaxLength(20)] public string? Title { get; set; }
+        [MaxLength(100)] public string? WalkInName { get; set; }
+        [Range(0, 150)] public int AgeYears { get; set; }
+        [Range(0, 11)] public int AgeMonths { get; set; }
+        [Range(0, 31)] public int AgeDays { get; set; }
+        [MaxLength(20)] public string? Gender { get; set; }
+        [MaxLength(10)] public string? Mobile { get; set; }
+        [MaxLength(500)] public string? Address { get; set; }
+
+        public int? DoctorId { get; set; }
+        [MaxLength(200)] public string? DoctorRef { get; set; }
+        [MaxLength(200)] public string? Witness { get; set; }
+        [MaxLength(500)] public string? Remarks { get; set; }
+
+        /// <summary>1 Sale on MRP (unit MRP), 2 Sale on Pur. Cost (unit cost)</summary>
+        [Range(1, 2)] public int SaleTypeId { get; set; } = 1;
+
+        /// <summary>0 Counter, 1 EMR request (SourceId = OPD visit), 2 Ward indent (SourceId = IndentId), 3 Discharge medicines (SourceId = IPD visit)</summary>
+        [Range(0, 3)] public int SourceTypeId { get; set; } = 0;
+        public int? SourceId { get; set; }
+
+        [Range(0, 100, ErrorMessage = "Bill discount % must be 0-100")]
+        public decimal BillDiscountPer { get; set; }
+
+        [MaxLength(100)] public string? UniqueId { get; set; }
+
+        public List<PharmacySaleItemRequest> Items { get; set; } = new();
+        public List<PharmacySaleRejectRequest>? Rejects { get; set; }
+        public List<PharmacySalePaymentRequest>? Payments { get; set; }
+    }
+
+    public class PharmacySaleSaveResponse
+    {
+        public int StoreBillId { get; set; }
+        public string BillNo { get; set; } = string.Empty;
+        public string Uhid { get; set; } = string.Empty;
+        public decimal NetAmount { get; set; }
+        public decimal PaidAmount { get; set; }
+    }
+
+    public class RejectPatientIndentRequest
+    {
+        [Range(1, int.MaxValue)] public int BranchId { get; set; }
+        [Range(1, int.MaxValue)] public int RoleId { get; set; }
+        [Range(1, int.MaxValue)] public int IndentId { get; set; }
+        [Required(ErrorMessage = "Rejected Reason is required")]
+        [MaxLength(256)] public string Reason { get; set; } = string.Empty;
+    }
+
+    public class PatientMedicineIndentItemRequest
+    {
+        [Range(1, int.MaxValue)] public int ItemId { get; set; }
+        [Range(1, 999999)] public int Qty { get; set; }
+        [MaxLength(100)] public string? Dose { get; set; }
+        [MaxLength(100)] public string? Route { get; set; }
+        [MaxLength(100)] public string? Times { get; set; }
+        [MaxLength(100)] public string? Duration { get; set; }
+        [MaxLength(100)] public string? Meal { get; set; }
+        [MaxLength(500)] public string? Remarks { get; set; }
+    }
+
+    public class PharmacyBillPrintRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Bill is required")]
+        public int StoreBillId { get; set; }
+    }
+
+    public class SavePatientMedicineIndentRequest
+    {
+        [Range(1, int.MaxValue)] public int BranchId { get; set; }
+        [Range(1, int.MaxValue)] public int PatientId { get; set; }
+        [Range(1, int.MaxValue)] public int VisitId { get; set; }
+        [Range(1, int.MaxValue, ErrorMessage = "Store is required")] public int ToDeptId { get; set; }
+        [MaxLength(20)] public string? Priority { get; set; } = "Routine";
+        [MaxLength(500)] public string? Remarks { get; set; }
+        public List<PatientMedicineIndentItemRequest> Items { get; set; } = new();
+    }
 }

@@ -57,5 +57,10 @@ namespace HISWEBAPI.Repositories.Interfaces
 
         ServiceResult<SavePatientOTNotesResponse> SavePatientOTNotes(SavePatientOTNotesRequest request, AllGlobalValues globalValues);
         ServiceResult<object> GetPatientOTNotesByVisitId(int visitId);
+
+        // Consent Form (2026-11-24)
+        ServiceResult<SavePatientConsentFormResponse> SavePatientConsentForm(SavePatientConsentFormRequest request, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PatientConsentFormModel>> GetPatientConsentFormList(int visitId);
+        ServiceResult<SavePatientConsentFormResponse> UpdatePatientConsentForm(UpdatePatientConsentFormRequest request, AllGlobalValues globalValues);
     }
 }

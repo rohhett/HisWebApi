@@ -100,5 +100,21 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<IEnumerable<PurchaseOrderSavedModel>> SavePurchaseOrder(PurchaseOrderSaveRequest request, AllGlobalValues globalValues);
         ServiceResult<PurchaseOrderSavedModel> ChangePurchaseOrderStatus(string action, PurchaseOrderActionRequest request, AllGlobalValues globalValues);
         ServiceResult<PurchaseOrderSavedModel> ApprovePurchaseOrder(PurchaseOrderApproveRequest request, AllGlobalValues globalValues);
+
+        // Patient Medicine Issue - pharmacy sale / IPD issue (2026-11-23)
+        ServiceResult<IEnumerable<SalePatientModel>> SearchPatientForSale(int branchId, int patientTypeId, string? search, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<SaleItemSearchModel>> SearchSaleItem(int branchId, int roleId, string search, int searchType, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<SaleBatchModel>> GetSaleItemBatches(int branchId, int roleId, string itemIds, AllGlobalValues globalValues);
+        ServiceResult<PharmacyUserRightsModel> GetPharmacyUserRights(int branchId, int roleId, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PharmacySaleListModel>> GetPharmacySaleList(int branchId, int? roleId, DateTime fromDate, DateTime toDate, int? patientTypeId, string? search, AllGlobalValues globalValues);
+        ServiceResult<PharmacySaleDetailsModel> GetPharmacySaleDetails(int storeBillId, AllGlobalValues globalValues);
+        ServiceResult<PharmacyRequestCountsModel> GetPharmacyRequestCounts(int branchId, int roleId, AllGlobalValues globalValues);
+        /// <summary>type = emr | indent</summary>
+        ServiceResult<IEnumerable<PharmacyRequestModel>> GetPharmacyRequests(string type, int branchId, int roleId, int? statusId, string? search, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PharmacyRequestItemModel>> GetPharmacyRequestItems(string type, int branchId, int roleId, int requestId, AllGlobalValues globalValues);
+        ServiceResult<PharmacySaleSaveResponse> SavePharmacySale(PharmacySaleSaveRequest request, AllGlobalValues globalValues);
+        ServiceResult<int> RejectPatientIndent(RejectPatientIndentRequest request, AllGlobalValues globalValues);
+        ServiceResult<int> SavePatientMedicineIndent(SavePatientMedicineIndentRequest request, AllGlobalValues globalValues);
+        ServiceResult<int> PrintPharmacyBill(PharmacyBillPrintRequest request, AllGlobalValues globalValues);
     }
 }

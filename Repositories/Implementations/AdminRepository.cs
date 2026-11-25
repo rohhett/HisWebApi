@@ -54,6 +54,111 @@ namespace HISWEBAPI.Repositories.Implementations
 
         }
 
+        // ================= Patient Form Master (2026-11-24) =================
+        private const string PatientFormCacheKey = "_PatientFormMaster_All";
+
+        public ServiceResult<CreateUpdatePatientFormResponse> CreateUpdatePatientForm(CreateUpdatePatientFormRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CreateUpdatePatientForm called. PatientFormId={request.PatientFormId}, FormName={request.FormName}");
+
+                var result = _sqlHelper.DML("IU_PatientFormMaster", CommandType.StoredProcedure,
+                    new
+                    {
+                        hospId = globalValues.hospId,
+                        patientFormId = request.PatientFormId,
+                        formName = request.FormName?.Trim(),
+                        filePath = request.FilePath?.Trim(),
+                        isActive = request.IsActive,
+                        userId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    },
+                    new { Result = 0 });
+
+                int resultValue = Convert.ToInt32(result);
+                _distributedCache.Remove(PatientFormCacheKey);
+
+                if (resultValue == -1)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("RECORD_ALREADY_EXISTS");
+                    return ServiceResult<CreateUpdatePatientFormResponse>.Failure(alert.Type, "Form name already exists", 409);
+                }
+                if (resultValue == 0 && request.PatientFormId > 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<CreateUpdatePatientFormResponse>.Failure(alert.Type, alert.Message, 404);
+                }
+                if (resultValue > 0)
+                {
+                    bool isNew = request.PatientFormId == 0;
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(isNew ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY");
+                    return ServiceResult<CreateUpdatePatientFormResponse>.Success(
+                        new CreateUpdatePatientFormResponse { PatientFormId = resultValue }, alert.Type, alert.Message, isNew ? 201 : 200);
+                }
+
+                _log.Error($"IU_PatientFormMaster returned unexpected result {resultValue}");
+                var failAlert = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                return ServiceResult<CreateUpdatePatientFormResponse>.Failure(failAlert.Type, failAlert.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdatePatientFormResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<IEnumerable<PatientFormMasterModel>> GetPatientFormList(int? patientFormId = null, int? isActive = null)
+        {
+            try
+            {
+                _log.Info($"GetPatientFormList called. PatientFormId={patientFormId?.ToString() ?? "All"}, IsActive={isActive?.ToString() ?? "All"}");
+
+                List<PatientFormMasterModel> all;
+                var cached = _distributedCache.GetString(PatientFormCacheKey);
+                if (!string.IsNullOrEmpty(cached))
+                {
+                    all = System.Text.Json.JsonSerializer.Deserialize<List<PatientFormMasterModel>>(cached) ?? new List<PatientFormMasterModel>();
+                }
+                else
+                {
+                    var dataTable = _sqlHelper.GetDataTable("S_GetPatientFormList", CommandType.StoredProcedure);
+                    all = dataTable?.AsEnumerable().Select(row => new PatientFormMasterModel
+                    {
+                        PatientFormId = row.Field<int>("PatientFormId"),
+                        FormName = row.Field<string>("FormName") ?? string.Empty,
+                        FilePath = row.Field<string>("FilePath") ?? string.Empty,
+                        IsActive = row.Field<int>("IsActive"),
+                        CreatedBy = row.Field<string>("CreatedBy") ?? string.Empty,
+                        CreatedOn = row.Field<string>("CreatedOn") ?? string.Empty,
+                        LastModifiedBy = row.Field<string>("LastModifiedBy") ?? string.Empty,
+                        LastModifiedOn = row.Field<string>("LastModifiedOn") ?? string.Empty
+                    }).ToList() ?? new List<PatientFormMasterModel>();
+
+                    if (all.Any())
+                        _distributedCache.SetString(PatientFormCacheKey, System.Text.Json.JsonSerializer.Serialize(all), new DistributedCacheEntryOptions());
+                }
+
+                var list = all.Where(x => (!patientFormId.HasValue || x.PatientFormId == patientFormId.Value)
+                                       && (!isActive.HasValue || x.IsActive == isActive.Value)).ToList();
+
+                if (!list.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<IEnumerable<PatientFormMasterModel>>.Failure(alert.Type, alert.Message, 404);
+                }
+
+                return ServiceResult<IEnumerable<PatientFormMasterModel>>.Success(list, "Info", $"{list.Count} form(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<PatientFormMasterModel>>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
         public ServiceResult<string> CreateUpdateRoleMaster(RoleMasterRequest request, AllGlobalValues globalValues)
         {
             try
@@ -11830,7 +11935,6 @@ namespace HISWEBAPI.Repositories.Implementations
                 }
 
                 _log.Info($"Retrieved {mappings.Count} user OT process mapping records (Granted + Remaining) from cache");
-
                 var alert1 = _messageService.GetMessageAndTypeByAlertCode("OPERATION_COMPLETED_SUCCESSFULLY");
                 return ServiceResult<object>.Success(
                     mappings,

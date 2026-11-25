@@ -745,4 +745,207 @@
     }
 
     #endregion
+
+    // ================= Patient Medicine Issue (pharmacy sale / IPD issue, 2026-11-23) =================
+
+    public class SalePatientModel
+    {
+        public int PatientId { get; set; }
+        public string Uhid { get; set; } = string.Empty;
+        public string PatientName { get; set; } = string.Empty;
+        public string Age { get; set; } = string.Empty;
+        public string Gender { get; set; } = string.Empty;
+        public string ContactNumber { get; set; } = string.Empty;
+        public int? VisitId { get; set; }
+        public string IpdNo { get; set; } = string.Empty;
+        public DateTime? AdmissionDate { get; set; }
+        public int CorporateId { get; set; }
+        public string CorporateName { get; set; } = string.Empty;
+        public int? DoctorId { get; set; }
+        public string DoctorName { get; set; } = string.Empty;
+        public string WardBed { get; set; } = string.Empty;
+        public int IsGeneralPatient { get; set; }
+    }
+
+    public class SaleItemSearchModel
+    {
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string SaltName { get; set; } = string.Empty;
+        public string ManufacturerName { get; set; } = string.Empty;
+        public string SaleUnitName { get; set; } = string.Empty;
+        public string DrugCategory { get; set; } = string.Empty;
+        public int IsNarcotic { get; set; }
+        public string ColorPicker { get; set; } = string.Empty;
+        public int HoldStatusId { get; set; }
+        public string HoldStatus { get; set; } = string.Empty;
+        public string HoldRemarks { get; set; } = string.Empty;
+        public string CorporateIds { get; set; } = string.Empty;
+        public int TotalStock { get; set; }
+        public int BatchCount { get; set; }
+        public int StockId { get; set; }
+        public string BatchNo { get; set; } = string.Empty;
+        public DateTime? ExpiryDate { get; set; }
+        public decimal Mrp { get; set; }
+        public decimal UnitCost { get; set; }
+        public decimal GstPer { get; set; }
+    }
+
+    public class SaleBatchModel
+    {
+        public int StockId { get; set; }
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string ItemCode { get; set; } = string.Empty;
+        public int? SubSubCategoryId { get; set; }
+        public string BatchNo { get; set; } = string.Empty;
+        public DateTime? ExpiryDate { get; set; }
+        public int CurrentStock { get; set; }
+        public decimal Mrp { get; set; }
+        public decimal UnitCost { get; set; }
+        public decimal GstPer { get; set; }
+        public int IsActive { get; set; }
+        public int IsNarcotic { get; set; }
+        public string CorporateIds { get; set; } = string.Empty;
+        public int HoldStatusId { get; set; }
+        public string HoldStatus { get; set; } = string.Empty;
+        public int IsExpired { get; set; }
+    }
+
+    public class PharmacySaleListModel
+    {
+        public int StoreBillId { get; set; }
+        public string BillNo { get; set; } = string.Empty;
+        public DateTime BillDate { get; set; }
+        public int PatientTypeId { get; set; }
+        public string PatientType { get; set; } = string.Empty;
+        public int IsWalkIn { get; set; }
+        public string Source { get; set; } = string.Empty;
+        public int PatientId { get; set; }
+        public string Uhid { get; set; } = string.Empty;
+        public string PatientName { get; set; } = string.Empty;
+        public string VisitNo { get; set; } = string.Empty;
+        public string StoreName { get; set; } = string.Empty;
+        public int TotalItems { get; set; }
+        public int TotalUnits { get; set; }
+        public decimal NetAmount { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal BalanceAmount { get; set; }
+        public int IsCancel { get; set; }
+        public string ReceiptNo { get; set; } = string.Empty;
+        public string CreatedByName { get; set; } = string.Empty;
+        public int PrintCount { get; set; }
+    }
+
+    public class PharmacySaleLineModel
+    {
+        public int ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string BatchNo { get; set; } = string.Empty;
+        public DateTime? ExpiryDate { get; set; }
+        public decimal Qty { get; set; }
+        public decimal Rate { get; set; }
+        public decimal GrossAmt { get; set; }
+        public decimal DiscPer { get; set; }
+        public decimal DiscAmt { get; set; }
+        public decimal GstPer { get; set; }
+        public decimal TaxAmt { get; set; }
+        public decimal NetAmt { get; set; }
+        public int IsNarcotic { get; set; }
+    }
+
+    public class PharmacySalePaymentModel
+    {
+        public int PaymentModeId { get; set; }
+        public string PaymentMode { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string ReferenceNo { get; set; } = string.Empty;
+    }
+
+    public class PharmacySaleDetailsModel : PharmacySaleListModel
+    {
+        public string Age { get; set; } = string.Empty;
+        public string Gender { get; set; } = string.Empty;
+        public string ContactNumber { get; set; } = string.Empty;
+        public string CorporateName { get; set; } = string.Empty;
+        public string DoctorName { get; set; } = string.Empty;
+        public string DoctorRef { get; set; } = string.Empty;
+        public string Witness { get; set; } = string.Empty;
+        public int SaleTypeId { get; set; }
+        public decimal GrossAmount { get; set; }
+        public decimal ItemDiscountAmount { get; set; }
+        public decimal BillDiscountPer { get; set; }
+        public decimal BillDiscountAmount { get; set; }
+        public decimal TaxAmount { get; set; }
+        public decimal RoundOff { get; set; }
+        // bill slip (2026-11-23)
+        public string WardBed { get; set; } = string.Empty;
+        public string BranchName { get; set; } = string.Empty;
+        public string BranchAddress { get; set; } = string.Empty;
+        public string BranchPhone { get; set; } = string.Empty;
+        public string BranchEmail { get; set; } = string.Empty;
+        public string LastPrintedByName { get; set; } = string.Empty;
+        public DateTime? LastPrintedOn { get; set; }
+        public List<PharmacySaleLineModel> Lines { get; set; } = new();
+        public List<PharmacySalePaymentModel> Payments { get; set; } = new();
+    }
+
+    public class PharmacyRequestCountsModel
+    {
+        public int EmrCount { get; set; }
+        public int IndentCount { get; set; }
+        public int IndentUrgentCount { get; set; }
+        public int DischargeCount { get; set; }
+    }
+
+    public class PharmacyUserRightsModel
+    {
+        public int CanSellNarcoDrugs { get; set; }
+        public decimal MaxDiscountPer { get; set; }
+    }
+
+    /// <summary>One row of the EMR / Ward-indent request drawer list.</summary>
+    public class PharmacyRequestModel
+    {
+        public int RequestId { get; set; }          // EMR: OPD visit id, Indent: IndentId, Discharge: IPD visit id
+        public string RefNo { get; set; } = string.Empty;
+        public string Priority { get; set; } = string.Empty;
+        public int StatusId { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public DateTime? RequestedOn { get; set; }
+        public int PatientId { get; set; }
+        public string Uhid { get; set; } = string.Empty;
+        public string PatientName { get; set; } = string.Empty;
+        public string Age { get; set; } = string.Empty;
+        public string Gender { get; set; } = string.Empty;
+        public int? VisitId { get; set; }           // IPD admission visit (indent)
+        public string IpdNo { get; set; } = string.Empty;
+        public string WardBed { get; set; } = string.Empty;
+        public int? DoctorId { get; set; }
+        public string DoctorName { get; set; } = string.Empty;
+        public string RaisedBy { get; set; } = string.Empty;
+        public string Remarks { get; set; } = string.Empty;
+        public string BillNo { get; set; } = string.Empty;
+        public string Department { get; set; } = string.Empty;
+        public int ItemCount { get; set; }
+        /// <summary>indent still open but partly issued / rejected (design "Partial" chip)</summary>
+        public int IsPartial { get; set; }
+        /// <summary>discharge request: the patient is already discharged (an IPD issue is no longer possible)</summary>
+        public int IsDischarged { get; set; }
+    }
+
+    public class PharmacyRequestItemModel
+    {
+        public int? IndentItemId { get; set; }
+        public int? ItemId { get; set; }
+        public string ItemName { get; set; } = string.Empty;
+        public string SaltName { get; set; } = string.Empty;
+        public string DosageForm { get; set; } = string.Empty;
+        public string Instruction { get; set; } = string.Empty;
+        public int RequestedQty { get; set; }
+        public int IssuedQty { get; set; }
+        public int RejectedQty { get; set; }
+        public int PendingQty { get; set; }
+        public int InStock { get; set; }
+    }
 }

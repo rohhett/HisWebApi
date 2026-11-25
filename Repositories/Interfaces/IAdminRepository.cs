@@ -167,5 +167,9 @@ namespace HISWEBAPI.Repositories.Interfaces
 
         ServiceResult<string> SaveUpdateUserOTProcessMapping(SaveUserOTProcessMappingRequest request, AllGlobalValues globalValues);
         ServiceResult<object> GetUserWiseOTProcessMapping(int branchId, int typeId, int userId);
+
+        // Patient Form Master (2026-11-24)
+        ServiceResult<CreateUpdatePatientFormResponse> CreateUpdatePatientForm(CreateUpdatePatientFormRequest request, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<PatientFormMasterModel>> GetPatientFormList(int? patientFormId = null, int? isActive = null);
     }
 }

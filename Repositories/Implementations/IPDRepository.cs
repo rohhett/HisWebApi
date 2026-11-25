@@ -3412,6 +3412,135 @@ namespace HISWEBAPI.Repositories.Implementations
             }
         }
 
+        // ================= Consent Form (IPD tab, 2026-11-24) =================
+        public ServiceResult<SavePatientConsentFormResponse> SavePatientConsentForm(SavePatientConsentFormRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"SavePatientConsentForm called. VisitId={request.VisitId}, PatientFormId={request.PatientFormId}, Mode={request.UploadMode}");
+
+                var result = _sqlHelper.DML("I_PatientConsentForm", CommandType.StoredProcedure,
+                    new
+                    {
+                        hospId = globalValues.hospId,
+                        branchId = request.BranchId,
+                        visitId = request.VisitId,
+                        patientFormId = request.PatientFormId,
+                        filePath = request.FilePath?.Trim(),
+                        uploadMode = request.UploadMode,
+                        userId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    },
+                    new { Result = 0 });
+
+                int resultValue = Convert.ToInt32(result);
+
+                if (resultValue == -2)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<SavePatientConsentFormResponse>.Failure(alert.Type, "Visit not found", 404);
+                }
+                if (resultValue == -1)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<SavePatientConsentFormResponse>.Failure(alert.Type, "Form not found or inactive", 404);
+                }
+                if (resultValue > 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
+                    return ServiceResult<SavePatientConsentFormResponse>.Success(
+                        new SavePatientConsentFormResponse { PatientConsentFormId = resultValue }, alert.Type, alert.Message, 201);
+                }
+
+                _log.Error($"I_PatientConsentForm returned unexpected result {resultValue}");
+                var failAlert = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                return ServiceResult<SavePatientConsentFormResponse>.Failure(failAlert.Type, failAlert.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<SavePatientConsentFormResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<SavePatientConsentFormResponse> UpdatePatientConsentForm(UpdatePatientConsentFormRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"UpdatePatientConsentForm called. VisitId={request.VisitId}, PatientConsentFormId={request.PatientConsentFormId}");
+
+                var result = _sqlHelper.DML("U_PatientConsentFormFile", CommandType.StoredProcedure,
+                    new
+                    {
+                        hospId = globalValues.hospId,
+                        visitId = request.VisitId,
+                        patientConsentFormId = request.PatientConsentFormId,
+                        filePath = request.FilePath?.Trim(),
+                        userId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    },
+                    new { Result = 0 });
+
+                int resultValue = Convert.ToInt32(result);
+
+                if (resultValue > 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                    return ServiceResult<SavePatientConsentFormResponse>.Success(
+                        new SavePatientConsentFormResponse { PatientConsentFormId = resultValue }, alert.Type, alert.Message, 200);
+                }
+
+                var notFound = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                return ServiceResult<SavePatientConsentFormResponse>.Failure(notFound.Type, "Consent form not found for the visit", 404);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<SavePatientConsentFormResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        // Not cached: the list changes every time a form is saved for the visit.
+        public ServiceResult<IEnumerable<PatientConsentFormModel>> GetPatientConsentFormList(int visitId)
+        {
+            try
+            {
+                _log.Info($"GetPatientConsentFormList called. VisitId={visitId}");
+
+                var dataTable = _sqlHelper.GetDataTable("S_GetPatientConsentFormList", CommandType.StoredProcedure, new { visitId });
+
+                var list = dataTable?.AsEnumerable().Select(row => new PatientConsentFormModel
+                {
+                    PatientConsentFormId = row.Field<int>("PatientConsentFormId"),
+                    VisitId = row.Field<int>("VisitId"),
+                    PatientFormId = row.Field<int>("PatientFormId"),
+                    FormName = row.Field<string>("FormName") ?? string.Empty,
+                    FilePath = row.Field<string>("FilePath") ?? string.Empty,
+                    UploadMode = row.Field<string>("UploadMode") ?? string.Empty,
+                    CreatedBy = row.Field<string>("CreatedBy") ?? string.Empty,
+                    CreatedOn = row.Field<string>("CreatedOn") ?? string.Empty,
+                    LastModifiedBy = row.Field<string>("LastModifiedBy") ?? string.Empty,
+                    LastModifiedOn = row.Field<string>("LastModifiedOn") ?? string.Empty
+                }).ToList() ?? new List<PatientConsentFormModel>();
+
+                if (!list.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<IEnumerable<PatientConsentFormModel>>.Failure(alert.Type, "No consent forms found for the visit", 404);
+                }
+
+                return ServiceResult<IEnumerable<PatientConsentFormModel>>.Success(list, "Info", $"{list.Count} consent form(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<PatientConsentFormModel>>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
         public ServiceResult<object> GetPatientOTNotesByVisitId(int visitId)
         {
             try

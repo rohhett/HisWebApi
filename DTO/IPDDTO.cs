@@ -887,4 +887,47 @@ namespace HISWEBAPI.DTO
         public int SavedCount { get; set; }
     }
 
+    // ================= Consent Form (IPD tab, 2026-11-24) =================
+    public class SavePatientConsentFormRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "VisitId is required")]
+        public int VisitId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "BranchId is required")]
+        public int BranchId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Form is required")]
+        public int PatientFormId { get; set; }
+
+        /// <summary>Path returned by POST Home/uploadDocument (PDF only).</summary>
+        [Required(ErrorMessage = "Form file is required")]
+        [StringLength(500, ErrorMessage = "File path cannot exceed 500 characters")]
+        public string FilePath { get; set; }
+
+        /// <summary>Scanned = printed, filled and uploaded; Digital = filled on screen.</summary>
+        [Required(ErrorMessage = "Upload mode is required")]
+        [RegularExpression("^(Scanned|Digital)$", ErrorMessage = "Upload mode must be Scanned or Digital")]
+        public string UploadMode { get; set; } = "Scanned";
+    }
+
+    public class SavePatientConsentFormResponse
+    {
+        public int PatientConsentFormId { get; set; }
+    }
+
+    /// <summary>Replaces the file of a saved consent form (the user edited it on screen).</summary>
+    public class UpdatePatientConsentFormRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "VisitId is required")]
+        public int VisitId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "PatientConsentFormId is required")]
+        public int PatientConsentFormId { get; set; }
+
+        /// <summary>Path returned by POST Home/uploadDocument (PDF only).</summary>
+        [Required(ErrorMessage = "Form file is required")]
+        [StringLength(500, ErrorMessage = "File path cannot exceed 500 characters")]
+        public string FilePath { get; set; }
+    }
+
 }
