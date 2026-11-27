@@ -233,6 +233,19 @@ namespace HISWEBAPI.DTO
         public int TabId { get; set; }
     }
 
+    // ================= User-wise favourite cards (2026-11-26) =================
+    public class SaveUserFavoriteCardsRequest
+    {
+        [Required(ErrorMessage = "PageKey is required")]
+        [StringLength(50, ErrorMessage = "PageKey cannot exceed 50 characters")]
+        public string PageKey { get; set; }
+
+        // card keys in display order; an empty list clears the favourites
+        [Required(ErrorMessage = "CardKeys is required")]
+        [MaxLength(5, ErrorMessage = "A maximum of 5 favourite cards is allowed")]
+        public List<string> CardKeys { get; set; } = new List<string>();
+    }
+
     public class UploadDocumentFromFileManagerRequest
     {
         [Required(ErrorMessage = "File is required")]

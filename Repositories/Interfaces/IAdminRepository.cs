@@ -10,6 +10,9 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<string> UpdateRoleMasterStatus(int roleId, int isActive, AllGlobalValues globalValues);
         ServiceResult<IEnumerable<RoleMasterModel>> RoleMasterList(int? roleId = null);
         ServiceResult<IEnumerable<FaIconModel>> getFaIconMaster();
+        // Role icons as base64 (2026-11-26)
+        ServiceResult<CreateUpdateRoleIconResponse> CreateUpdateRoleIcon(int roleIconId, string iconName, byte[]? pngBytes, AllGlobalValues globalValues);
+        ServiceResult<IEnumerable<RoleIconModel>> GetRoleIconList(int? isActive = null);
         ServiceResult<UserMasterResponse> CreateUpdateUserMaster(UserMasterRequest request);
         ServiceResult<string> UpdateUserMasterStatus(int userId, int isActive, AllGlobalValues globalValues);
         ServiceResult<IEnumerable<UserMasterModel>> UserMasterList(int? userId = null, int? userRoleId = null, int? isActive = null);
@@ -83,6 +86,7 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<IEnumerable<InsuranceCompanyMasterModel>> GetInsuranceCompanyMasterList();
         ServiceResult<CorporateTypeMasterResponse> CreateUpdateCorporateTypeMaster(CorporateTypeMasterRequest request, AllGlobalValues globalValues);
         ServiceResult<IEnumerable<CorporateTypeMasterModel>> GetCorporateTypeMasterList();
+        ServiceResult<ExcelUploadResponse<CorporateUploadRow>> CorporateExcelUpload(CorporateExcelUploadRequest request, AllGlobalValues globalValues);
         ServiceResult<CorporateMasterResponse> CreateUpdateCorporateMaster(CorporateMasterRequest request, AllGlobalValues globalValues);
         ServiceResult<IEnumerable<CorporateMasterDetailModel>> GetCorporateMasterList(int? corporateId = null, string corporateName = null, int? insuranceCompanyId = null, string insuranceCompanyName = null, int? isActive = null);
         ServiceResult<string> UpdateCorporateMasterStatus(int corporateId, int isActive, AllGlobalValues globalValues);

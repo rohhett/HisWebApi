@@ -115,7 +115,7 @@ namespace HISWEBAPI.DTO
         public string ForGender { get; set; }
         public int IsOutSource { get; set; } = 0;
         public int? IsPrintAlone { get; set; }
-        public int? IsSampleSegregationRequired { get; set; }
+        public int? IsSentToDepartmentRequired { get; set; }
         public int? IsDepartmentReceivingRequired { get; set; }
 
         [Required(ErrorMessage = "IsActive is required")]
@@ -244,47 +244,6 @@ namespace HISWEBAPI.DTO
       
         public List<InvastigationObservationRangeItem> Ranges { get; set; }
             = new List<InvastigationObservationRangeItem>();
-    }
-
-    public class LabFormulaMasterComponentRequest
-    {
-        [Required(ErrorMessage = "TypeId is required")]
-        public int typeId { get; set; }
-
-        [Required(ErrorMessage = "Type is required")]
-        [StringLength(32, ErrorMessage = "Type cannot exceed 32 characters")]
-        public string type { get; set; }
-
-        [Required(ErrorMessage = "Component is required")]
-        [StringLength(64, ErrorMessage = "Component cannot exceed 64 characters")]
-        public string component { get; set; }
-
-        [Required(ErrorMessage = "SequenceNo is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "SequenceNo must be greater than 0")]
-        public int sequenceNo { get; set; }
-    }
-
-    public class CreateUpdateLabFormulaMasterRequest
-    {
-        [Required(ErrorMessage = "ObservationId is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "ObservationId must be greater than 0")]
-        public int observationId { get; set; }
-
-        [StringLength(1000, ErrorMessage = "FormulaText cannot exceed 1000 characters")]
-        public string formulaText { get; set; }
-
-        public string formulaExpression { get; set; }
-
-        public string formulaExpressionRight { get; set; }
-
-        public List<LabFormulaMasterComponentRequest> formulaComponents { get; set; } = new List<LabFormulaMasterComponentRequest>();
-    }
-
-    public class DeleteLabFormulaRequest
-    {
-        [Required(ErrorMessage = "InvestigationId is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "InvestigationId must be greater than 0")]
-        public int InvestigationId { get; set; }
     }
 
     public class SampleStatusUpdateData
@@ -819,4 +778,309 @@ namespace HISWEBAPI.DTO
         public int Id { get; set; }
     }
 
+}
+
+namespace HISWEBAPI.DTO
+{
+    // ================= Lab TAT Monitor (2026-11-26) =================
+    public class LabTATSaveResponse
+    {
+        public int Id { get; set; }
+    }
+
+    public class CreateUpdateLabTATRuleRequest
+    {
+        public int RuleId { get; set; } = 0;                       // 0 = insert; update changes minutes / clock / note only
+
+        [Required(ErrorMessage = "Rule level is required")]
+        [StringLength(10, ErrorMessage = "Rule level cannot exceed 10 characters")]
+        public string RuleLevel { get; set; } = "ALL";             // TEST | DEPT | ALL
+
+        public int InvestigationId { get; set; } = 0;
+        public int DepartmentId { get; set; } = 0;
+        public int PriorityId { get; set; } = 0;                   // 0 = any
+        public int ShiftId { get; set; } = 0;                      // 0 = any
+
+        [Range(1, 43200, ErrorMessage = "TAT minutes must be between 1 and 43200")]
+        public int TatMinutes { get; set; }
+
+        [Required(ErrorMessage = "Clock is required")]
+        [StringLength(10, ErrorMessage = "Clock cannot exceed 10 characters")]
+        public string ClockType { get; set; } = "INHERIT";        // INHERIT | WORKING | 24X7
+
+        [StringLength(200, ErrorMessage = "Note cannot exceed 200 characters")]
+        public string? Note { get; set; }
+    }
+
+    public class UpdateLabTATRuleStatusRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Rule is required")]
+        public int RuleId { get; set; }
+    }
+
+    public class UpdateLabTATPriorityClockRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Priority is required")]
+        public int PriorityId { get; set; }
+
+        [Required(ErrorMessage = "Clock is required")]
+        [StringLength(10, ErrorMessage = "Clock cannot exceed 10 characters")]
+        public string ClockType { get; set; } = "WORKING";        // WORKING | 24X7
+    }
+
+    public class UpdateLabTATShiftRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Shift is required")]
+        public int ShiftId { get; set; }
+
+        [Required(ErrorMessage = "From time is required")]
+        [StringLength(5, ErrorMessage = "From time must be HH:mm")]
+        public string FromTime { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "To time is required")]
+        [StringLength(5, ErrorMessage = "To time must be HH:mm")]
+        public string ToTime { get; set; } = string.Empty;
+    }
+
+    public class SaveLabTATSettingRequest
+    {
+        [Required(ErrorMessage = "TAT start is required")]
+        [StringLength(20, ErrorMessage = "TAT start cannot exceed 20 characters")]
+        public string TatStartPoint { get; set; } = "received";
+
+        [Required(ErrorMessage = "TAT end is required")]
+        [StringLength(20, ErrorMessage = "TAT end cannot exceed 20 characters")]
+        public string TatEndPoint { get; set; } = "verified";
+
+        [Range(5, 90, ErrorMessage = "At-risk % must be between 5 and 90")]
+        public int AtRiskPercent { get; set; } = 25;
+
+        [Range(50, 100, ErrorMessage = "On-time target % must be between 50 and 100")]
+        public int OnTimeTargetPercent { get; set; } = 90;
+    }
+
+    public class SaveLabTATWorkingHoursRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Department is required")]
+        public int DepartmentId { get; set; }
+
+        [Range(0, 6, ErrorMessage = "Day must be 0 (Sunday) to 6 (Saturday)")]
+        public int DayOfWeekNo { get; set; }
+
+        public int IsOpen { get; set; } = 1;
+
+        [StringLength(5, ErrorMessage = "From time must be HH:mm")]
+        public string? FromTime { get; set; }
+
+        [StringLength(5, ErrorMessage = "To time must be HH:mm")]
+        public string? ToTime { get; set; }
+    }
+
+    public class CreateUpdateLabTATHolidayRequest
+    {
+        public int HolidayId { get; set; } = 0;
+
+        [Required(ErrorMessage = "Holiday date is required")]
+        public System.DateTime? HolidayDate { get; set; }
+
+        [Required(ErrorMessage = "Holiday name is required")]
+        [StringLength(100, ErrorMessage = "Holiday name cannot exceed 100 characters")]
+        public string HolidayName { get; set; } = string.Empty;
+
+        public int DepartmentId { get; set; } = 0;                 // 0 = all departments
+    }
+
+    public class UpdateLabTATHolidayStatusRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Holiday is required")]
+        public int HolidayId { get; set; }
+    }
+
+    public class SaveLabTATDelayReasonRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Sample is required")]
+        public int PatientInvestigationId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Delay reason is required")]
+        public int DelayReasonId { get; set; }
+
+        [StringLength(256, ErrorMessage = "Remark cannot exceed 256 characters")]
+        public string? Remark { get; set; }
+    }
+
+    public class SimulateLabTATRequest
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Test is required")]
+        public int InvestigationId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Priority is required")]
+        public int PriorityId { get; set; }
+
+        [Required(ErrorMessage = "TAT start is required")]
+        public System.DateTime? StartOn { get; set; }
+    }
+
+    // ================= Lab Approval Authority Master (2026-11-27) =================
+    public class CreateUpdateLabApprovalAuthorityRequest
+    {
+        public int LabApprovalAuthorityId { get; set; } = 0;
+
+        /// <summary>0 = default rule (all branches without their own)</summary>
+        [Range(0, int.MaxValue, ErrorMessage = "Branch cannot be negative")]
+        public int BranchId { get; set; }
+
+        [Range(1, 3, ErrorMessage = "Category is required")]
+        public int LabTypeId { get; set; }
+
+        [Required(ErrorMessage = "Select at least one sub department")]
+        [StringLength(1000)]
+        public string SubSubCategoryIds { get; set; } = "";
+
+        [Range(1, 2, ErrorMessage = "Approval flow is required")]
+        public int ApprovalFlowId { get; set; }
+
+        [Required, StringLength(100)]
+        public string ApprovalFlow { get; set; } = "";
+
+        [Range(0, 1, ErrorMessage = "All Approvals Required must be 0 or 1")]
+        public int IsAllApprovalRequired { get; set; } = 1;
+
+        [Range(1, 4, ErrorMessage = "Approval level is required")]
+        public int ApprovalLevelId { get; set; }
+
+        [Required, StringLength(100)]
+        public string ApprovalLevel { get; set; } = "";
+
+        [Required(ErrorMessage = "Select at least one level 1 doctor")]
+        [StringLength(1000)]
+        public string Level1DoctorIds { get; set; } = "";
+
+        [StringLength(1000)]
+        public string? Level2DoctorIds { get; set; }
+
+        [StringLength(1000)]
+        public string? Level3DoctorIds { get; set; }
+
+        [StringLength(1000)]
+        public string? Level4DoctorIds { get; set; }
+
+        [StringLength(1000)]
+        public string? ProvisionalUserIds { get; set; }
+
+        [Range(0, 1, ErrorMessage = "IsActive must be 0 or 1")]
+        public int IsActive { get; set; } = 1;
+
+        /// <summary>Login branch and role: the setup right is checked for them.</summary>
+        [Range(1, int.MaxValue, ErrorMessage = "SessionBranchId is required")]
+        public int SessionBranchId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "RoleId is required")]
+        public int RoleId { get; set; }
+    }
+
+    public class UpdateLabApprovalAuthorityStatusRequest
+    {
+        [Range(1, int.MaxValue)]
+        public int LabApprovalAuthorityId { get; set; }
+
+        [Range(0, 1)]
+        public int IsActive { get; set; }
+
+        [Range(1, int.MaxValue)]
+        public int SessionBranchId { get; set; }
+
+        [Range(1, int.MaxValue)]
+        public int RoleId { get; set; }
+    }
+
+    public class LabApprovalAuthorityResponse
+    {
+        public int LabApprovalAuthorityId { get; set; }
+    }
+
+    // ================= Lab Formula + Result Validation setup (2026-11-27) =================
+    public class CreateUpdateInvestigationFormulaRequest
+    {
+        public int FormulaId { get; set; } = 0;                    // 0 = insert, >0 = update
+
+        [Range(1, int.MaxValue, ErrorMessage = "Investigation is required")]
+        public int InvestigationId { get; set; }
+
+        [Range(1, int.MaxValue, ErrorMessage = "Target observation is required")]
+        public int ObservationId { get; set; }
+
+        [Required(ErrorMessage = "Gender is required")]
+        [RegularExpression("^(B|M|F)$", ErrorMessage = "Gender must be B, M or F")]
+        public string Gender { get; set; } = "B";
+
+        [Required(ErrorMessage = "Formula is required")]
+        [StringLength(2000, ErrorMessage = "Formula cannot exceed 2000 characters")]
+        public string Expression { get; set; } = "";
+
+        [StringLength(2000, ErrorMessage = "Formula text cannot exceed 2000 characters")]
+        public string? FormulaText { get; set; }
+
+        [Range(0, 6, ErrorMessage = "Decimal places must be between 0 and 6")]
+        public int DecimalPlaces { get; set; } = 2;
+
+        public int IsActive { get; set; } = 1;
+    }
+
+    public class ValidationObservationItem
+    {
+        [Range(1, int.MaxValue, ErrorMessage = "Observation is required")]
+        public int ObservationId { get; set; }
+        public int SequenceNo { get; set; }
+    }
+
+    public class CreateUpdateInvestigationValidationRequest
+    {
+        public int ValidationId { get; set; } = 0;                 // 0 = insert, >0 = update
+
+        [Range(1, int.MaxValue, ErrorMessage = "Investigation is required")]
+        public int InvestigationId { get; set; }
+
+        [Required(ErrorMessage = "Validation name is required")]
+        [StringLength(100, ErrorMessage = "Validation name cannot exceed 100 characters")]
+        public string ValidationName { get; set; } = "";
+
+        [Required(ErrorMessage = "Gender is required")]
+        [RegularExpression("^(B|M|F)$", ErrorMessage = "Gender must be B, M or F")]
+        public string Gender { get; set; } = "B";
+
+        [Required(ErrorMessage = "Check type is required")]
+        [StringLength(20, ErrorMessage = "Check type cannot exceed 20 characters")]
+        public string CheckType { get; set; } = "";
+
+        [StringLength(2000, ErrorMessage = "Expression cannot exceed 2000 characters")]
+        public string? Expression { get; set; }
+
+        [StringLength(2000, ErrorMessage = "Expression text cannot exceed 2000 characters")]
+        public string? ExpressionText { get; set; }
+
+        [Required(ErrorMessage = "Condition is required")]
+        [StringLength(12, ErrorMessage = "Condition cannot exceed 12 characters")]
+        public string Operator { get; set; } = "";
+
+        public decimal Value1 { get; set; }
+        public decimal? Value2 { get; set; }
+        public decimal Tolerance { get; set; } = 0;
+
+        [Range(1, 2, ErrorMessage = "Action must be 1 (block save) or 2 (warning)")]
+        public int ActionType { get; set; } = 1;
+
+        public int SkipIfBlank { get; set; } = 1;
+
+        [StringLength(500, ErrorMessage = "Error message cannot exceed 500 characters")]
+        public string? ErrorMessage { get; set; }
+
+        public int IsActive { get; set; } = 1;
+
+        public List<ValidationObservationItem> Observations { get; set; } = new();
+    }
+
+    public class LabFormulaSetupSaveResponse
+    {
+        public int Id { get; set; }
+    }
 }

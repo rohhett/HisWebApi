@@ -1,4 +1,4 @@
-﻿using HISWEBAPI.Configuration;
+using HISWEBAPI.Configuration;
 using HISWEBAPI.DTO;
 using HISWEBAPI.Repositories.Implementations;
 using HISWEBAPI.Repositories.Interfaces;
@@ -831,169 +831,90 @@ namespace HISWEBAPI.Controllers
             });
         }
 
-        [HttpGet("getFormulaMasterByObservationId")]
+        // ================= Lab Formula + Result Validation setup (2026-11-27) =================
+        // Replaces getFormulaMasterByObservationId, getObservationFormulaByInvestigationId,
+        // createUpdateLabFormulaMaster and deleteLabFormulaByObservationid (owner asked for the redesign).
+
+        [HttpGet("getInvestigationFormulaSetup")]
         [Authorize]
-        public IActionResult GetFormulaMasterByObservationId([FromQuery] int observationId)
+        public IActionResult GetInvestigationFormulaSetup([FromQuery] int investigationId)
         {
-            _log.Info($"GetFormulaMasterByObservationId called. ObservationId={observationId}");
-
-            if (observationId <= 0)
-            {
-                _log.Warn("Invalid ObservationId provided.");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new
-                {
-                    result = false,
-                    messageType = alert.Type,
-                    message = "ObservationId must be greater than 0",
-                    errors = new { observationId }
-                });
-            }
-
-            var serviceResult = _labRepository.GetFormulaMasterByObservationId(observationId);
-
-            if (serviceResult.Result)
-                _log.Info($"Formula master fetched successfully: {serviceResult.Message}");
-            else
-                _log.Warn($"Formula master fetch failed: {serviceResult.Message}");
-
-            return StatusCode(serviceResult.StatusCode, new
-            {
-                result = serviceResult.Result,
-                messageType = serviceResult.MessageType,
-                message = serviceResult.Message,
-                data = serviceResult.Data
-            });
+            _log.Info($"GetInvestigationFormulaSetup called. InvestigationId={investigationId}");
+            if (investigationId <= 0) return InvalidParameter("InvestigationId must be greater than 0");
+            return Wrap(_labRepository.GetInvestigationFormulaSetup(investigationId));
         }
 
-     
-        [HttpGet("getObservationFormulaByInvestigationId")]
+        [HttpGet("getResultEntryFormulaSetup")]
         [Authorize]
-        public IActionResult GetObservationFormulaByInvestigationId([FromQuery] int investigationId)
+        public IActionResult GetResultEntryFormulaSetup([FromQuery] int patientInvestigationId)
         {
-            _log.Info($"GetObservationFormulaByInvestigationId called. InvestigationId={investigationId}");
-
-            if (investigationId <= 0)
-            {
-                _log.Warn("Invalid InvestigationId provided.");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new
-                {
-                    result = false,
-                    messageType = alert.Type,
-                    message = "InvestigationId must be greater than 0",
-                    errors = new { investigationId }
-                });
-            }
-
-            var serviceResult = _labRepository.GetObservationFormulaByInvestigationId(investigationId);
-
-            if (serviceResult.Result)
-                _log.Info($"Observation formula fetched successfully: {serviceResult.Message}");
-            else
-                _log.Warn($"Observation formula fetch failed: {serviceResult.Message}");
-
-            return StatusCode(serviceResult.StatusCode, new
-            {
-                result = serviceResult.Result,
-                messageType = serviceResult.MessageType,
-                message = serviceResult.Message,
-                data = serviceResult.Data
-            });
+            _log.Info($"GetResultEntryFormulaSetup called. PatientInvestigationId={patientInvestigationId}");
+            if (patientInvestigationId <= 0) return InvalidParameter("PatientInvestigationId must be greater than 0");
+            return Wrap(_labRepository.GetResultEntryFormulaSetup(patientInvestigationId));
         }
 
-      
-        [HttpPost("createUpdateLabFormulaMaster")]
+        [HttpPost("createUpdateInvestigationFormula")]
         [Authorize]
-        public IActionResult CreateUpdateLabFormulaMaster([FromBody] CreateUpdateLabFormulaMasterRequest request)
+        public IActionResult CreateUpdateInvestigationFormula([FromBody] CreateUpdateInvestigationFormulaRequest request)
         {
-            _log.Info($"CreateUpdateLabFormulaMaster called. ObservationId={request.observationId}");
-
-            if (!ModelState.IsValid)
+            _log.Info($"CreateUpdateInvestigationFormula called. FormulaId={request.FormulaId}, InvestigationId={request.InvestigationId}, ObservationId={request.ObservationId}");
+            if (!ModelState.IsValid || string.IsNullOrWhiteSpace(request.Expression))
             {
-                _log.Warn("Invalid model state for lab formula master insert/update.");
                 var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
-                return BadRequest(new
-                {
-                    result = false,
-                    messageType = alert.Type,
-                    message = alert.Message,
-                    errors = ModelState
-                });
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
             }
+            if (request.IsActive != 0 && request.IsActive != 1) return InvalidParameter("IsActive must be 0 or 1");
+            return Wrap(_labRepository.CreateUpdateInvestigationFormula(request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
 
-            if (request.formulaComponents != null && request.formulaComponents.Any())
+        [HttpPatch("deleteInvestigationFormula")]
+        [Authorize]
+        public IActionResult DeleteInvestigationFormula([FromQuery] int formulaId)
+        {
+            _log.Info($"DeleteInvestigationFormula called. FormulaId={formulaId}");
+            if (formulaId <= 0) return InvalidParameter("FormulaId must be greater than 0");
+            return Wrap(_labRepository.DeleteInvestigationFormula(formulaId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
+
+        [HttpPost("createUpdateInvestigationValidation")]
+        [Authorize]
+        public IActionResult CreateUpdateInvestigationValidation([FromBody] CreateUpdateInvestigationValidationRequest request)
+        {
+            _log.Info($"CreateUpdateInvestigationValidation called. ValidationId={request.ValidationId}, InvestigationId={request.InvestigationId}, Name={request.ValidationName}");
+            if (!ModelState.IsValid || string.IsNullOrWhiteSpace(request.ValidationName))
             {
-                var duplicateSeqNos = request.formulaComponents
-                    .GroupBy(c => c.sequenceNo)
-                    .Where(g => g.Count() > 1)
-                    .Select(g => g.Key)
-                    .ToList();
-
-                if (duplicateSeqNos.Any())
-                {
-                    _log.Warn($"Duplicate SequenceNo values found: {string.Join(", ", duplicateSeqNos)}");
-                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                    return BadRequest(new
-                    {
-                        result = false,
-                        messageType = alert.Type,
-                        message = "Duplicate SequenceNo values are not allowed in formula components",
-                        errors = new { duplicateSequenceNos = duplicateSeqNos }
-                    });
-                }
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
             }
+            if (request.IsActive != 0 && request.IsActive != 1) return InvalidParameter("IsActive must be 0 or 1");
+            return Wrap(_labRepository.CreateUpdateInvestigationValidation(request, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
 
-            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
-            var serviceResult = _labRepository.CreateUpdateLabFormulaMaster(request, globalValues);
+        [HttpPatch("deleteInvestigationValidation")]
+        [Authorize]
+        public IActionResult DeleteInvestigationValidation([FromQuery] int validationId)
+        {
+            _log.Info($"DeleteInvestigationValidation called. ValidationId={validationId}");
+            if (validationId <= 0) return InvalidParameter("ValidationId must be greater than 0");
+            return Wrap(_labRepository.DeleteInvestigationValidation(validationId, GlobalFunctions.GetGlobalValues(HttpContext)));
+        }
 
-            if (serviceResult.Result)
-                _log.Info($"Lab formula master operation completed: {serviceResult.Message}");
-            else
-                _log.Warn($"Lab formula master operation failed: {serviceResult.Message}");
+        private IActionResult InvalidParameter(string message)
+        {
+            var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+            return BadRequest(new { result = false, messageType = alert.Type, message });
+        }
 
+        private IActionResult Wrap<T>(Models.ServiceResult<T> serviceResult)
+        {
+            if (serviceResult.Result) _log.Info($"Formula setup call completed: {serviceResult.Message}");
+            else _log.Warn($"Formula setup call failed: {serviceResult.Message}");
             return StatusCode(serviceResult.StatusCode, new
             {
                 result = serviceResult.Result,
                 messageType = serviceResult.MessageType,
                 message = serviceResult.Message,
                 data = serviceResult.Data
-            });
-        }
-
-      
-        [HttpPatch("deleteLabFormulaByObservationid")]
-        [Authorize]
-        public IActionResult DeleteLabFormulaByObservationid([FromQuery] int Observationid)
-        {
-            _log.Info($"DeleteLabFormulaByObservationid called. Observationid={Observationid}");
-
-            if (Observationid <= 0)
-            {
-                _log.Warn("Invalid Observationid provided for lab formula deletion.");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new
-                {
-                    result = false,
-                    messageType = alert.Type,
-                    message = "Observationid must be greater than 0",
-                    errors = new { Observationid }
-                });
-            }
-
-            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
-            var serviceResult = _labRepository.DeleteLabFormulaByObservationid(Observationid, globalValues);
-
-            if (serviceResult.Result)
-                _log.Info($"Lab formula deleted successfully: {serviceResult.Message}");
-            else
-                _log.Warn($"Lab formula deletion failed: {serviceResult.Message}");
-
-            return StatusCode(serviceResult.StatusCode, new
-            {
-                result = serviceResult.Result,
-                messageType = serviceResult.MessageType,
-                message = serviceResult.Message
             });
         }
 
@@ -1128,70 +1049,6 @@ namespace HISWEBAPI.Controllers
 
 
 
-        [HttpGet("searchPatientInvestigationForSampleSegregation")]
-        [Authorize]
-        public IActionResult SearchPatientInvestigationForSampleSegregation(
- [FromQuery] int branchId,
- [FromQuery] int typeId,
- [FromQuery] string uhid = null,
- [FromQuery] string ipdNo = null,
- [FromQuery] string labNo = null,
- [FromQuery] string fromDate = null,
- [FromQuery] string toDate = null,
- [FromQuery] string barCode = null,
- [FromQuery] int subCategoryId = 0,
- [FromQuery] int subSubCategoryId = 0,
- [FromQuery] int investigationId = 0,
- [FromQuery] string patientName = null,
- [FromQuery] int roleId = 0,
- [FromQuery] int corporateId = 0,
- [FromQuery] int statusId = 0,
- [FromQuery] int sampleTypeId = 0,
- [FromQuery] int roomTypeId = 0,
- [FromQuery] string isUrgent = null
-         )
-        {
-            _log.Info($"SearchPatientInvestigationForSampleSegregation called. BranchId={branchId}, TypeId={typeId}");
-
-            if (branchId <= 0)
-            {
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new { result = false, messageType = alert.Type, message = "BranchId must be greater than 0" });
-            }
-
-            if (string.IsNullOrWhiteSpace(fromDate))
-            {
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new { result = false, messageType = alert.Type, message = "FromDate is required" });
-            }
-
-            if (string.IsNullOrWhiteSpace(toDate))
-            {
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new { result = false, messageType = alert.Type, message = "ToDate is required" });
-            }
-
-
-            if (roleId <= 0)
-            {
-                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
-                return BadRequest(new { result = false, messageType = alert.Type, message = "RoleId must be greater than 0" });
-            }
-
-
-            var serviceResult = _labRepository.SearchPatientInvestigationForSampleSegregation(
-                branchId, typeId, uhid, ipdNo, labNo, fromDate, toDate,
-                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId, sampleTypeId, roomTypeId, isUrgent);
-
-            return StatusCode(serviceResult.StatusCode, new
-            {
-                result = serviceResult.Result,
-                messageType = serviceResult.MessageType,
-                message = serviceResult.Message,
-                data = serviceResult.Data
-            });
-        }
-
         [HttpGet("searchPatientInvestigationForSampleProcessingPathology")]
         [Authorize]
         public IActionResult searchPatientInvestigationForSampleProcessingPathology(
@@ -1210,7 +1067,10 @@ namespace HISWEBAPI.Controllers
   [FromQuery] int roleId = 0,
   [FromQuery] int corporateId = 0,
   [FromQuery] int statusId = 0,
-  [FromQuery] int canSampleCollect = 0
+  [FromQuery] int canSampleCollect = 0,
+  [FromQuery] int sampleTypeId = 0,
+  [FromQuery] int roomTypeId = 0,
+  [FromQuery] string isUrgent = null
           )
         {
             _log.Info($"searchPatientInvestigationForSampleProcessingPathology called. BranchId={branchId}, TypeId={typeId}");
@@ -1243,7 +1103,7 @@ namespace HISWEBAPI.Controllers
 
             var serviceResult = _labRepository.searchPatientInvestigationForSampleProcessingPathology(
                 branchId, typeId, uhid, ipdNo, labNo, fromDate, toDate,
-                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId, canSampleCollect);
+                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId, canSampleCollect, sampleTypeId, roomTypeId, isUrgent);
 
             return StatusCode(serviceResult.StatusCode, new
             {
@@ -1271,7 +1131,10 @@ namespace HISWEBAPI.Controllers
  [FromQuery] string patientName = null,
  [FromQuery] int roleId = 0,
  [FromQuery] int corporateId = 0,
- [FromQuery] int statusId = 0
+ [FromQuery] int statusId = 0,
+ [FromQuery] int sampleTypeId = 0,
+ [FromQuery] int roomTypeId = 0,
+ [FromQuery] string isUrgent = null
          )
         {
             _log.Info($"searchPatientInvestigationForSampleProcessingRadiology called. BranchId={branchId}, TypeId={typeId}");
@@ -1304,7 +1167,7 @@ namespace HISWEBAPI.Controllers
 
             var serviceResult = _labRepository.searchPatientInvestigationForSampleProcessingRadiology(
                 branchId, typeId, uhid, ipdNo, labNo, fromDate, toDate,
-                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId);
+                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId, sampleTypeId, roomTypeId, isUrgent);
 
             return StatusCode(serviceResult.StatusCode, new
             {
@@ -1363,7 +1226,7 @@ namespace HISWEBAPI.Controllers
                 {
                     result = false,
                     messageType = alert.Type,
-                    message = "StatusId must be 1 (Sample Collection), 2 (Sample Segregation), 3 (Dept Receiving), or 6 (Dispatch)",
+                    message = "StatusId must be 1 (Sample Collection), 2 (Sent To Department), 3 (Dept Receiving), or 6 (Dispatch)",
                     errors = new { invalidStatuses }
                 });
             }
@@ -2484,7 +2347,10 @@ namespace HISWEBAPI.Controllers
 [FromQuery] string patientName = null,
 [FromQuery] int roleId = 0,
 [FromQuery] int corporateId = 0,
-[FromQuery] int statusId = 0
+[FromQuery] int statusId = 0,
+[FromQuery] int sampleTypeId = 0,
+[FromQuery] int roomTypeId = 0,
+[FromQuery] string isUrgent = null
        )
         {
             _log.Info($"searchPatientInvestigationForLaboratoryHelpDesk called. BranchId={branchId}, TypeId={typeId}");
@@ -2517,7 +2383,7 @@ namespace HISWEBAPI.Controllers
 
             var serviceResult = _labRepository.searchPatientInvestigationForLaboratoryHelpDesk(
                 branchId, typeId, uhid, ipdNo, labNo, fromDate, toDate,
-                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId);
+                barCode, subCategoryId, subSubCategoryId, investigationId, patientName, roleId, corporateId, statusId, sampleTypeId, roomTypeId, isUrgent);
 
             return StatusCode(serviceResult.StatusCode, new
             {
@@ -3722,6 +3588,225 @@ namespace HISWEBAPI.Controllers
                 data = serviceResult.Data
             });
         }
+
+        // ================= Lab TAT Monitor (2026-11-26) =================
+
+        [HttpGet("getLabTATConfig")]
+        [Authorize]
+        public IActionResult GetLabTATConfig()
+        {
+            _log.Info("GetLabTATConfig called.");
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.GetLabTATConfig(globalValues), "GetLabTATConfig");
+        }
+
+        [HttpGet("getLabTATDashboard")]
+        [Authorize]
+        public IActionResult GetLabTATDashboard([FromQuery] string? period = "30d", [FromQuery] int? departmentId = null, [FromQuery] int? priorityId = null)
+        {
+            _log.Info($"GetLabTATDashboard called. Period={period}, DepartmentId={departmentId}, PriorityId={priorityId}");
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.GetLabTATDashboard(period, departmentId, priorityId, globalValues), "GetLabTATDashboard");
+        }
+
+        [HttpGet("getLabTATWorklist")]
+        [Authorize]
+        public IActionResult GetLabTATWorklist([FromQuery] int? departmentId = null)
+        {
+            _log.Info($"GetLabTATWorklist called. DepartmentId={departmentId}");
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.GetLabTATWorklist(departmentId, globalValues), "GetLabTATWorklist");
+        }
+
+        [HttpGet("getLabTATLateRegister")]
+        [Authorize]
+        public IActionResult GetLabTATLateRegister([FromQuery] string? period = "30d", [FromQuery] int? departmentId = null, [FromQuery] int? priorityId = null)
+        {
+            _log.Info($"GetLabTATLateRegister called. Period={period}, DepartmentId={departmentId}, PriorityId={priorityId}");
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.GetLabTATLateRegister(period, departmentId, priorityId, globalValues), "GetLabTATLateRegister");
+        }
+
+        [HttpPost("simulateLabTAT")]
+        [Authorize]
+        public IActionResult SimulateLabTAT([FromBody] SimulateLabTATRequest request)
+        {
+            _log.Info($"SimulateLabTAT called. InvestigationId={request.InvestigationId}, PriorityId={request.PriorityId}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.SimulateLabTAT(request, globalValues), "SimulateLabTAT");
+        }
+
+        [HttpPost("createUpdateLabTATRule")]
+        [Authorize]
+        public IActionResult CreateUpdateLabTATRule([FromBody] CreateUpdateLabTATRuleRequest request)
+        {
+            _log.Info($"CreateUpdateLabTATRule called. RuleId={request.RuleId}, Level={request.RuleLevel}, Minutes={request.TatMinutes}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.CreateUpdateLabTATRule(request, globalValues), "CreateUpdateLabTATRule");
+        }
+
+        [HttpPatch("updateLabTATRuleStatus")]
+        [Authorize]
+        public IActionResult UpdateLabTATRuleStatus([FromBody] UpdateLabTATRuleStatusRequest request)
+        {
+            _log.Info($"UpdateLabTATRuleStatus called. RuleId={request.RuleId}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.UpdateLabTATRuleStatus(request, globalValues), "UpdateLabTATRuleStatus");
+        }
+
+        [HttpPatch("updateLabTATPriorityClock")]
+        [Authorize]
+        public IActionResult UpdateLabTATPriorityClock([FromBody] UpdateLabTATPriorityClockRequest request)
+        {
+            _log.Info($"UpdateLabTATPriorityClock called. PriorityId={request.PriorityId}, Clock={request.ClockType}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.UpdateLabTATPriorityClock(request, globalValues), "UpdateLabTATPriorityClock");
+        }
+
+        [HttpPatch("updateLabTATShift")]
+        [Authorize]
+        public IActionResult UpdateLabTATShift([FromBody] UpdateLabTATShiftRequest request)
+        {
+            _log.Info($"UpdateLabTATShift called. ShiftId={request.ShiftId}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.UpdateLabTATShift(request, globalValues), "UpdateLabTATShift");
+        }
+
+        [HttpPost("saveLabTATSetting")]
+        [Authorize]
+        public IActionResult SaveLabTATSetting([FromBody] SaveLabTATSettingRequest request)
+        {
+            _log.Info($"SaveLabTATSetting called. Start={request.TatStartPoint}, End={request.TatEndPoint}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.SaveLabTATSetting(request, globalValues), "SaveLabTATSetting");
+        }
+
+        [HttpPost("saveLabTATWorkingHours")]
+        [Authorize]
+        public IActionResult SaveLabTATWorkingHours([FromBody] SaveLabTATWorkingHoursRequest request)
+        {
+            _log.Info($"SaveLabTATWorkingHours called. DepartmentId={request.DepartmentId}, Day={request.DayOfWeekNo}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.SaveLabTATWorkingHours(request, globalValues), "SaveLabTATWorkingHours");
+        }
+
+        [HttpPost("createUpdateLabTATHoliday")]
+        [Authorize]
+        public IActionResult CreateUpdateLabTATHoliday([FromBody] CreateUpdateLabTATHolidayRequest request)
+        {
+            _log.Info($"CreateUpdateLabTATHoliday called. HolidayId={request.HolidayId}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.CreateUpdateLabTATHoliday(request, globalValues), "CreateUpdateLabTATHoliday");
+        }
+
+        [HttpPatch("updateLabTATHolidayStatus")]
+        [Authorize]
+        public IActionResult UpdateLabTATHolidayStatus([FromBody] UpdateLabTATHolidayStatusRequest request)
+        {
+            _log.Info($"UpdateLabTATHolidayStatus called. HolidayId={request.HolidayId}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.UpdateLabTATHolidayStatus(request, globalValues), "UpdateLabTATHolidayStatus");
+        }
+
+        [HttpPost("saveLabTATDelayReason")]
+        [Authorize]
+        public IActionResult SaveLabTATDelayReason([FromBody] SaveLabTATDelayReasonRequest request)
+        {
+            _log.Info($"SaveLabTATDelayReason called. PatientInvestigationId={request.PatientInvestigationId}, DelayReasonId={request.DelayReasonId}");
+            if (!ModelState.IsValid) return TatInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return TatResult(_labRepository.SaveLabTATDelayReason(request, globalValues), "SaveLabTATDelayReason");
+        }
+
+        private IActionResult TatInvalidModel()
+        {
+            _log.Warn("Invalid model state for Lab TAT request.");
+            var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+            return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+        }
+
+        private IActionResult TatResult<T>(HISWEBAPI.Models.ServiceResult<T> serviceResult, string action)
+        {
+            if (serviceResult.Result) _log.Info($"{action} completed: {serviceResult.Message}");
+            else _log.Warn($"{action} failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        // ================= Lab Approval Authority Master (2026-11-27) =================
+
+        [HttpGet("getLabApprovalAuthorityLookups")]
+        [Authorize]
+        public IActionResult GetLabApprovalAuthorityLookups([FromQuery] int sessionBranchId, [FromQuery] int roleId)
+        {
+            _log.Info($"GetLabApprovalAuthorityLookups called. BranchId={sessionBranchId}, RoleId={roleId}");
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return LabApprovalResult(_labRepository.GetLabApprovalAuthorityLookups(sessionBranchId, roleId, globalValues), "GetLabApprovalAuthorityLookups");
+        }
+
+        [HttpGet("getLabApprovalAuthorityList")]
+        [Authorize]
+        public IActionResult GetLabApprovalAuthorityList([FromQuery] int sessionBranchId, [FromQuery] int roleId)
+        {
+            _log.Info($"GetLabApprovalAuthorityList called. BranchId={sessionBranchId}, RoleId={roleId}");
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return LabApprovalResult(_labRepository.GetLabApprovalAuthorityList(sessionBranchId, roleId, globalValues), "GetLabApprovalAuthorityList");
+        }
+
+        [HttpPost("createUpdateLabApprovalAuthority")]
+        [Authorize]
+        public IActionResult CreateUpdateLabApprovalAuthority([FromBody] CreateUpdateLabApprovalAuthorityRequest request)
+        {
+            _log.Info($"CreateUpdateLabApprovalAuthority called. Id={request.LabApprovalAuthorityId}, BranchId={request.BranchId}, LabTypeId={request.LabTypeId}");
+            if (!ModelState.IsValid) return LabApprovalInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return LabApprovalResult(_labRepository.CreateUpdateLabApprovalAuthority(request, globalValues), "CreateUpdateLabApprovalAuthority");
+        }
+
+        [HttpPatch("updateLabApprovalAuthorityStatus")]
+        [Authorize]
+        public IActionResult UpdateLabApprovalAuthorityStatus([FromBody] UpdateLabApprovalAuthorityStatusRequest request)
+        {
+            _log.Info($"UpdateLabApprovalAuthorityStatus called. Id={request.LabApprovalAuthorityId}, IsActive={request.IsActive}");
+            if (!ModelState.IsValid) return LabApprovalInvalidModel();
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            return LabApprovalResult(_labRepository.UpdateLabApprovalAuthorityStatus(request, globalValues), "UpdateLabApprovalAuthorityStatus");
+        }
+
+        private IActionResult LabApprovalInvalidModel()
+        {
+            _log.Warn("Invalid model state for Lab Approval Authority request.");
+            var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+            return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+        }
+
+        private IActionResult LabApprovalResult<T>(HISWEBAPI.Models.ServiceResult<T> serviceResult, string action)
+        {
+            if (serviceResult.Result) _log.Info($"{action} completed: {serviceResult.Message}");
+            else _log.Warn($"{action} failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
     }
 }
-    

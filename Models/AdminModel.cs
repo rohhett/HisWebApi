@@ -34,15 +34,24 @@ namespace HISWEBAPI.Models
     {
         public int RoleId { get; set; }
         public required string RoleName { get; set; }
-        public int FaIconId { get; set; }
         public int IsActive { get; set; }
-        public string? IconClass { get; set; }
-        public string? IconName { get; set; }
-        public string? ImagePath { get; set; }
+        public int RoleIconId { get; set; }
+        /// <summary>Data URL of the role icon, filled from the RoleIconMaster cache (not stored in _RoleMaster_All).</summary>
+        public string? RoleIcon { get; set; }
         public string? CreatedBy { get; set; }
         public string? CreatedOn { get; set; }
         public string? LastModifiedBy { get; set; }
         public string? LastModifiedOn { get; set; }
+    }
+
+    // ================= Role icons (2026-11-26) =================
+    public class RoleIconModel
+    {
+        public int RoleIconId { get; set; }
+        public string? IconName { get; set; }
+        public int IsActive { get; set; }
+        /// <summary>"data:image/png;base64,..." built from RoleIconMaster.MimeType + IconBase64.</summary>
+        public string? RoleIcon { get; set; }
     }
 
     public class FaIconModel
@@ -80,6 +89,9 @@ namespace HISWEBAPI.Models
         public string? UserRole { get; set; }
         /// <summary>1 = Yes (OTP verification popup at login when unverified), 0 = No.</summary>
         public int IsContactVerificationRequired { get; set; } = 1;
+        public int CanProvisionalApproval { get; set; }
+        public string? ProvisionalSignPath { get; set; }
+        public string? ConsentFilePath { get; set; }
     }
 
 
@@ -425,8 +437,8 @@ namespace HISWEBAPI.Models
         public string ActivePaymentModes { get; set; }
         public int IsRegistrationChargeApplicable { get; set; }
         public int IsCaseBillingApplicable { get; set; }
-
-
+        public int IsContactVerified { get; set; }
+        public int IsEmailVerified { get; set; }
     }
 
     public class DiscountApprovalMasterModel

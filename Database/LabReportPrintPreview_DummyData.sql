@@ -276,7 +276,7 @@ BEGIN
         P.LabNo, P.BarCode,
         FORMAT(DATEADD(MINUTE, -150, @Now), 'dd-MMM-yy HH:mm') AS InvBillingDateTime,
         FORMAT(DATEADD(MINUTE, -145, @Now), 'dd-MMM-yy HH:mm') AS InvSampleColDateTime,
-        FORMAT(DATEADD(MINUTE, -130, @Now), 'dd-MMM-yy HH:mm') AS InvSampleSegregationDateTime,
+        FORMAT(DATEADD(MINUTE, -130, @Now), 'dd-MMM-yy HH:mm') AS InvSentToDepartmentDateTime,
         FORMAT(DATEADD(MINUTE, -120, @Now), 'dd-MMM-yy HH:mm') AS InvDeptRecDateTime,
         FORMAT(DATEADD(MINUTE,  -10, @Now), 'dd-MMM-yy HH:mm') AS InvReportApprovalDateTime,
         FORMAT(DATEADD(MINUTE,  -30, @Now), 'dd-MMM-yy HH:mm') AS InvResultDateTime,

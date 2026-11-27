@@ -18,7 +18,7 @@ using System.Text.Json;
 
 namespace HISWEBAPI.Repositories.Implementations
 {
-    public class DoctorRepository : Interfaces.IDoctorRepository
+    public partial class DoctorRepository : Interfaces.IDoctorRepository
     {
         private readonly ICustomSqlHelper _sqlHelper;
         private readonly IResponseMessageService _messageService;
@@ -717,7 +717,10 @@ namespace HISWEBAPI.Repositories.Implementations
                         IsDoctorUnit = row.Field<byte>("IsDoctorUnit"),
                         RoomNo = row.Field<string>("RoomNo") ?? string.Empty,
                         DoctorRoleId = row.Field<int?>("DoctorRoleId"),
-                        DoctorRole = row.Field<string>("DoctorRole")
+                        DoctorRole = row.Field<string>("DoctorRole"),
+                        // Contains: the list still works before 2026-11-27_DoctorCorporateUploadVerification.sql is run
+                        IsContactVerified = dataTable.Columns.Contains("IsContactVerified") ? Convert.ToInt32(row["IsContactVerified"]) : 0,
+                        IsEmailVerified = dataTable.Columns.Contains("IsEmailVerified") ? Convert.ToInt32(row["IsEmailVerified"]) : 0
                     }).ToList() ?? new List<DoctorMasterModelAll>();
 
                     // Store ALL doctors in cache (no expiration)

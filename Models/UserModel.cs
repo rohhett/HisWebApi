@@ -4,8 +4,9 @@
     {
         public int RoleId { get; set; }
         public string RoleName { get; set; }
-        public string IconClass { get; set; }
-        public string ImagePath { get; set; }
+        public int RoleIconId { get; set; }
+        /// <summary>Data URL of the role icon (RoleIconMaster, from the Redis cache).</summary>
+        public string? RoleIcon { get; set; }
         public int IsFavoriteRole { get; set; }
     }
 

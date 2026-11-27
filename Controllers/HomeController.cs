@@ -1639,6 +1639,78 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        // ================= User-wise favourite cards (2026-11-26) =================
+        [HttpGet("getUserFavoriteCards")]
+        [Authorize]
+        public IActionResult GetUserFavoriteCards([FromQuery] string pageKey)
+        {
+            _log.Info($"GetUserFavoriteCards called. PageKey={pageKey}");
+
+            if (string.IsNullOrWhiteSpace(pageKey) || pageKey.Trim().Length > 50)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = "PageKey is required (max 50 characters)",
+                    errors = new { pageKey }
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _homeRepository.GetUserFavoriteCards(pageKey, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"Favourite cards fetched: {serviceResult.Message}");
+            else
+                _log.Warn($"Favourite cards fetch failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpPost("saveUserFavoriteCards")]
+        [Authorize]
+        public IActionResult SaveUserFavoriteCards([FromBody] SaveUserFavoriteCardsRequest request)
+        {
+            _log.Info($"SaveUserFavoriteCards called. PageKey={request?.PageKey}, Count={request?.CardKeys?.Count}");
+
+            if (!ModelState.IsValid || string.IsNullOrWhiteSpace(request?.PageKey))
+            {
+                _log.Warn("Invalid model state for SaveUserFavoriteCards.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new
+                {
+                    result = false,
+                    messageType = alert.Type,
+                    message = alert.Message,
+                    errors = ModelState
+                });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _homeRepository.SaveUserFavoriteCards(request, globalValues);
+
+            if (serviceResult.Result)
+                _log.Info($"Favourite cards saved: {serviceResult.Message}");
+            else
+                _log.Warn($"Favourite cards save failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpGet("getAssignBranchRight")]
         [Authorize]
         public IActionResult GetAssignBranchRight([FromQuery] int branchId)

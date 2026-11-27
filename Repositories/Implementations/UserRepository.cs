@@ -11,6 +11,7 @@ using HISWEBAPI.Models;
 using HISWEBAPI.DTO;
 using HISWEBAPI.Services;
 using HISWEBAPI.Utilities;
+using HISWEBAPI.Utilities.Helpers;
 using HISWEBAPI.Exceptions;
 using HISWEBAPI.Services.Interfaces;
 using HISWEBAPI.Configuration;
@@ -1017,10 +1018,14 @@ namespace HISWEBAPI.Repositories.Implementations
                 {
                     RoleId = row.Field<int>("RoleId"),
                     RoleName = row.Field<string>("RoleName"),
-                    IconClass = row.Field<string>("IconClass"),
-                    ImagePath = row.Field<string>("ImagePath"),
+                    RoleIconId = row.Field<int>("RoleIconId"),
                     IsFavoriteRole = row.Field<int>("isFavoriteRole")
                 }).ToList() ?? new List<UserRoleModel>();
+
+                // role icons as base64 data URLs from the Redis cache (_RoleIconMaster_All)
+                var iconMap = RoleIconCache.GetMap(_distributedCache, _sqlHelper);
+                foreach (var role in roles)
+                    role.RoleIcon = iconMap.TryGetValue(role.RoleIconId, out var icon) ? icon : null;
 
                 if (!roles.Any())
                 {

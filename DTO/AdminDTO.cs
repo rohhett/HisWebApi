@@ -33,6 +33,28 @@ namespace HISWEBAPI.DTO
         public string ConfigKey { get; set; }
     }
 
+    // ================= Role icon add / update (2026-11-26) =================
+    /// <summary>
+    /// Role Master "+" popup (multipart/form-data). RoleIconId = 0 adds a new icon (file required);
+    /// RoleIconId > 0 updates the selected icon (file optional: without it only the name changes).
+    /// </summary>
+    public class CreateUpdateRoleIconRequest
+    {
+        public int RoleIconId { get; set; } = 0;
+
+        [Required(ErrorMessage = "Role icon name is required")]
+        [StringLength(100, ErrorMessage = "Role icon name cannot exceed 100 characters")]
+        public string IconName { get; set; } = string.Empty;
+
+        /// <summary>PNG of at most 5 KB; required when adding.</summary>
+        public Microsoft.AspNetCore.Http.IFormFile? IconFile { get; set; }
+    }
+
+    public class CreateUpdateRoleIconResponse
+    {
+        public int RoleIconId { get; set; }
+    }
+
     public class RoleMasterRequest
     {
         public int RoleId { get; set; } = 0;
@@ -44,12 +66,8 @@ namespace HISWEBAPI.DTO
         [Required(ErrorMessage = "IsActive status is required")]
         public int IsActive { get; set; }
 
-        [Required(ErrorMessage = "FaIconId is required")]
-        public int FaIconId { get; set; } = 0;
-
-        [Required(ErrorMessage = "Image Path is required")]
-        [StringLength(256, ErrorMessage = "Image Path cannot exceed 256 characters")]
-        public string ImagePath { get; set; }
+        [Range(1, int.MaxValue, ErrorMessage = "Role Icon is required")]
+        public int RoleIconId { get; set; }
     }
 
     public class UserMasterRequest
@@ -107,6 +125,18 @@ namespace HISWEBAPI.DTO
 
         /// <summary>"Contact verification required on login": 1 = Yes (default), 0 = No.</summary>
         public int IsContactVerificationRequired { get; set; } = 1;
+
+        /// <summary>"Can Provisional Approval": 1 = Yes, 0 = No (default). Yes needs a signature.</summary>
+        [Range(0, 1, ErrorMessage = "CanProvisionalApproval must be 0 or 1")]
+        public int CanProvisionalApproval { get; set; } = 0;
+
+        /// <summary>Path returned by Home/uploadDocument (PNG / JPG). Empty on update = keep the saved one.</summary>
+        [StringLength(500)]
+        public string? ProvisionalSignPath { get; set; }
+
+        /// <summary>Optional. Path returned by Home/uploadDocument (PDF / PNG / JPG).</summary>
+        [StringLength(500)]
+        public string? ConsentFilePath { get; set; }
 
     }
 
@@ -1519,7 +1549,7 @@ namespace HISWEBAPI.DTO
         public int Id { get; set; } = 0;
 
         [Required(ErrorMessage = "BranchId is required")]
-        [Range(1, int.MaxValue, ErrorMessage = "BranchId must be greater than 0")]
+        [Range(0, int.MaxValue, ErrorMessage = "BranchId cannot be negative")] // 0 = default rule (all branches without their own)
         public int BranchId { get; set; }
 
         [Required(ErrorMessage = "ApprovalFlowId is required")]

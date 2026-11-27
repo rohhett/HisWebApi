@@ -58,6 +58,9 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<object> GetAvailableBeds(int branchId, int typeId);
         ServiceResult<object> GetBillingTabs(int branchId, int roleId, int tabTypeId, int roomServiceItemId, AllGlobalValues globalValues);
         ServiceResult<string> UpdateFavoriteBillingTab(UpdateFavoriteBillingTabRequest request, AllGlobalValues globalValues);
+        // User-wise favourite cards (2026-11-26)
+        ServiceResult<List<string>> GetUserFavoriteCards(string pageKey, AllGlobalValues globalValues);
+        ServiceResult<List<string>> SaveUserFavoriteCards(SaveUserFavoriteCardsRequest request, AllGlobalValues globalValues);
         ServiceResult<object> GetAssignBranchRight(int branchId);
         ServiceResult<IEnumerable<Dictionary<string, object>>> GetPatientLedgerBill(int patientId);
         ServiceResult<IEnumerable<Dictionary<string, object>>> GetReceiptPaymentDetails(int receiptId);

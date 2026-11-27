@@ -20,7 +20,7 @@ using Utility = HISWEBAPI.Utilities.Utility;
 
 namespace HISWEBAPI.Repositories.Implementations
 {
-    public class LabRepository : Interfaces.ILabRepository
+    public partial class LabRepository : Interfaces.ILabRepository
     {
         private readonly ICustomSqlHelper _sqlHelper;
         private readonly IResponseMessageService _messageService;
@@ -1025,7 +1025,7 @@ namespace HISWEBAPI.Repositories.Implementations
                         @forGender = request.ForGender,
                         @isOutSource = request.IsOutSource,
                         @isPrintAlone = request.IsPrintAlone,
-                        @isSampleSegregationRequired = request.IsSampleSegregationRequired,
+                        @isSentToDepartmentRequired = request.IsSentToDepartmentRequired,
                         @isDepartmentReceivingRequired = request.IsDepartmentReceivingRequired,
                         @isActive = request.IsActive,
                         @userId = globalValues.userId,
@@ -1145,7 +1145,7 @@ int? reportTypeId,
                         ForGender = row.Field<string>("ForGender") ?? string.Empty,
                         IsOutSource = row.Field<int>("IsOutSource"),
                         IsPrintAlone = row.Field<int?>("IsPrintAlone"),
-                        IsSampleSegregationRequired = row.Field<int?>("IsSampleSegregationRequired"),
+                        IsSentToDepartmentRequired = row.Field<int?>("IsSentToDepartmentRequired"),
                         IsDepartmentReceivingRequired = row.Field<int?>("IsDepartmentReceivingRequired"),
                         ShortName = row.Field<string>("ShortName") ?? string.Empty,
                         SampleVolume = row.Field<string>("SampleVolume") ?? string.Empty,
@@ -1694,67 +1694,70 @@ int? reportTypeId,
                           $"ObservationId={request.ObservationId}, Gender={request.Gender}, " +
                           $"RangeCount={request.Ranges?.Count ?? 0}");
 
-                // 1. Delete — mirrors D_InvastigationObservationRangeMaster SP logic
-                //    Gender='B' → deletes ALL genders for that observation
-                //    Gender='M'/'F' → deletes 'B' rows + the specific gender rows
-                _sqlHelper.DML(
-                    "D_InvastigationObservationRangeMaster",
-                    CommandType.StoredProcedure,
-                    new
-                    {
-                        @ObservationId = request.ObservationId,
-                        @Gender = request.Gender
-                    },
-                    new { result = 0 });
-
-                _log.Info($"Deleted existing ranges. ObservationId={request.ObservationId}, Gender={request.Gender}");
-
                 int insertedCount = 0;
 
-                if (request.Ranges != null && request.Ranges.Any())
+                // Delete + inserts in one transaction (2026-11-26): a failed insert used to leave the
+                // observation with its old ranges deleted and only part of the new ones saved.
+                using (var con = new SqlConnection(_configuration.GetConnectionString("ConnectionString")))
                 {
-                    foreach (var row in request.Ranges)
+                    con.Open();
+                    using (SqlTransaction tnx = CustomSqlHelper.getSqlTransaction(con))
                     {
+                        // 1. Delete (D_InvastigationObservationRangeMaster, 2026-11-26):
+                        //    Gender='B' → deletes ALL genders for that observation
+                        //    Gender='M'/'F' → deletes that gender's rows; its 'B' rows become rows of the
+                        //    other gender (or are removed when that gender has its own rows)
                         _sqlHelper.DML(
-                            "IU_InvastigationObservationRangeMaster",
+                            tnx,
+                            "D_InvastigationObservationRangeMaster",
                             CommandType.StoredProcedure,
                             new
                             {
-                                @ObservationId = row.ObservationId,
-                                @Gender = row.Gender,
-                                @FromAge = row.FromAge,
-                                @ToAge = row.ToAge,
-                                @DefaultValue = row.DefaultValue,
-                                @MinValue = row.MinValue,
-                                @MaxValue = row.MaxValue,
-                                @Unit = row.Unit,
-                                @DisplayValue = row.DisplayValue,
-                                @IpAddress = globalValues.ipAddress,
-                                @UserId = globalValues.userId
-                            },
-                            new { result = 0 });
+                                @ObservationId = request.ObservationId,
+                                @Gender = request.Gender
+                            });
 
-                        insertedCount++;
+                        _log.Info($"Deleted existing ranges. ObservationId={request.ObservationId}, Gender={request.Gender}");
+
+                        // 2. Insert the new rows
+                        foreach (var row in request.Ranges ?? new List<InvastigationObservationRangeItem>())
+                        {
+                            _sqlHelper.DML(
+                                tnx,
+                                "IU_InvastigationObservationRangeMaster",
+                                CommandType.StoredProcedure,
+                                new
+                                {
+                                    @ObservationId = row.ObservationId,
+                                    @Gender = row.Gender,
+                                    @FromAge = row.FromAge,
+                                    @ToAge = row.ToAge,
+                                    @DefaultValue = row.DefaultValue,
+                                    @MinValue = row.MinValue,
+                                    @MaxValue = row.MaxValue,
+                                    @Unit = row.Unit,
+                                    @DisplayValue = row.DisplayValue,
+                                    @IpAddress = globalValues.ipAddress,
+                                    @UserId = globalValues.userId
+                                });
+
+                            insertedCount++;
+                        }
+
+                        tnx.Commit();
                     }
                 }
 
                 _log.Info($"Inserted {insertedCount} range row(s). ObservationId={request.ObservationId}");
 
-                // 3. Invalidate cache for this ObservationId + Gender combo
-                //    Also clear 'B' key because SP deletes 'B' rows when Gender is M/F
+                // 3. Invalidate the cache for every gender of this observation: a Male / Female save can
+                //    turn the 'B' rows into rows of the other gender, a 'B' save removes all genders
                 var keysToInvalidate = new List<string>
-        {
-            RangeMasterCacheKey(request.ObservationId, request.Gender)
-        };
-
-                if (request.Gender == "M" || request.Gender == "F")
-                    keysToInvalidate.Add(RangeMasterCacheKey(request.ObservationId, "B"));
-
-                if (request.Gender == "B")
                 {
-                    keysToInvalidate.Add(RangeMasterCacheKey(request.ObservationId, "M"));
-                    keysToInvalidate.Add(RangeMasterCacheKey(request.ObservationId, "F"));
-                }
+                    RangeMasterCacheKey(request.ObservationId, "M"),
+                    RangeMasterCacheKey(request.ObservationId, "F"),
+                    RangeMasterCacheKey(request.ObservationId, "B")
+                };
 
                 foreach (var key in keysToInvalidate)
                 {
@@ -1778,319 +1781,6 @@ int? reportTypeId,
                 var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
                 return ServiceResult<SubmitInvastigationObservationRangeMasterResponse>.Failure(
                     alert.Type, alert.Message, 500);
-            }
-        }
-
-        public ServiceResult<IEnumerable<LabFormulaMasterModel>> GetFormulaMasterByObservationId(int observationId)
-        {
-            try
-            {
-                _log.Info($"GetFormulaMasterByObservationId called. ObservationId={observationId}");
-
-                string cacheKey = $"_LabFormulaMaster_Obs{observationId}";
-
-                var cachedData = _distributedCache.GetString(cacheKey);
-                List<LabFormulaMasterModel> formulaComponents;
-
-                if (!string.IsNullOrEmpty(cachedData))
-                {
-                    _log.Info($"LabFormulaMaster data retrieved from cache. Key={cacheKey}");
-                    formulaComponents = JsonSerializer.Deserialize<List<LabFormulaMasterModel>>(cachedData);
-                }
-                else
-                {
-                    _log.Info($"LabFormulaMaster cache miss. Fetching data from database. Key={cacheKey}");
-
-                    var dataTable = _sqlHelper.GetDataTable(
-                        "S_GetFormulaMasterByObservationId",
-                        CommandType.StoredProcedure,
-                        new { observationId = observationId }
-                    );
-
-                    formulaComponents = dataTable?.AsEnumerable().Select(row => new LabFormulaMasterModel
-                    {
-                        FormulaText = row.Field<string>("FormulaText") ?? string.Empty,
-                        TypeId = row.Field<int?>("TypeId") ?? 0,
-                        Type = row.Field<string>("Type") ?? string.Empty,
-                        Component = row.Field<string>("Component") ?? string.Empty,
-                        SequenceNo = row.Field<int?>("SequenceNo") ?? 0,
-                        FormulaExpressionRight = row.Field<string>("FormulaExpressionRight") ?? string.Empty
-                    }).ToList() ?? new List<LabFormulaMasterModel>();
-
-                    if (formulaComponents.Any())
-                    {
-                        var serialized = JsonSerializer.Serialize(formulaComponents);
-                        var cacheOptions = new DistributedCacheEntryOptions
-                        {
-                            AbsoluteExpiration = null,
-                            SlidingExpiration = null
-                        };
-                        _distributedCache.SetString(cacheKey, serialized, cacheOptions);
-                        _log.Info($"LabFormulaMaster data cached permanently. Key={cacheKey}, Count={formulaComponents.Count}");
-                    }
-                }
-
-                if (!formulaComponents.Any())
-                {
-                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
-                    _log.Info($"No formula found for ObservationId={observationId}");
-                    return ServiceResult<IEnumerable<LabFormulaMasterModel>>.Failure(
-                        alert.Type,
-                        $"No formula found for ObservationId: {observationId}",
-                        404
-                    );
-                }
-
-                _log.Info($"Retrieved {formulaComponents.Count} formula component(s) from cache for ObservationId={observationId}");
-
-                return ServiceResult<IEnumerable<LabFormulaMasterModel>>.Success(
-                    formulaComponents,
-                    "Info",
-                    $"{formulaComponents.Count} formula component(s) retrieved successfully",
-                    200
-                );
-            }
-            catch (Exception ex)
-            {
-                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
-                return ServiceResult<IEnumerable<LabFormulaMasterModel>>.Failure(
-                    alert.Type,
-                    alert.Message,
-                    500
-                );
-            }
-        }
-
-
-        public ServiceResult<LabFormulaMasterResponse> CreateUpdateLabFormulaMaster(
-            CreateUpdateLabFormulaMasterRequest request,
-            AllGlobalValues globalValues)
-        {
-           
-            var connectionString = _configuration.GetConnectionString("ConnectionString");
-            SqlConnection con = new SqlConnection(connectionString);
-            con.Open();
-            var tnx = CustomSqlHelper.getSqlTransaction(con);
-            try
-            {
-                _log.Info($"CreateUpdateLabFormulaMaster called. ObservationId={request.observationId}");
-
-                var formulaIdResult = _sqlHelper.DML(tnx, "IU_LabFormulaMaster", CommandType.StoredProcedure, new
-                {
-                    observationId = request.observationId,
-                    formulaText = request.formulaText ?? string.Empty,
-                    formulaExpression = request.formulaExpression ?? string.Empty,
-                    formulaExpressionRight = request.formulaExpressionRight ?? string.Empty,
-                    userId = globalValues.userId,
-                    ipAddress = globalValues.ipAddress
-                },
-                new { result = 0 });
-
-                int formulaId = Convert.ToInt32(formulaIdResult);
-
-                if (formulaId <= 0)
-                {
-                    tnx.Rollback();
-                    var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
-                    _log.Error($"Failed to create/update formula master. ObservationId={request.observationId}");
-                    return ServiceResult<LabFormulaMasterResponse>.Failure(
-                        alert.Type,
-                        "Formula Id could not be generated",
-                        500
-                    );
-                }
-
-                _sqlHelper.DML(tnx, "D_LabFormulaMasterComponents", CommandType.StoredProcedure, new
-                {
-                    formulaId = formulaId
-                });
-
-                _log.Info($"Deleted existing formula components for FormulaId={formulaId}");
-
-                if (request.formulaComponents != null && request.formulaComponents.Any())
-                {
-                    foreach (var component in request.formulaComponents)
-                    {
-                        _sqlHelper.DML(tnx, "I_LabFormulaMasterComponents", CommandType.StoredProcedure, new
-                        {
-                            formulaId = formulaId,
-                            typeId = component.typeId,
-                            type = component.type,
-                            component = component.component,
-                            sequenceNo = component.sequenceNo
-                        });
-                    }
-                    _log.Info($"Inserted {request.formulaComponents.Count} formula component(s) for FormulaId={formulaId}");
-                }
-
-                tnx.Commit();
-                _log.Info($"Transaction committed. FormulaId={formulaId}");
-
-                // Clear related cache entries
-                _distributedCache.Remove($"_LabFormulaMaster_Obs{request.observationId}");
-                GlobalFunctions.ClearCacheByPattern(_configuration, "_ObservationFormula_Inv*");
-
-
-                var responseData = new LabFormulaMasterResponse { FormulaId = formulaId };
-                var successAlert = _messageService.GetMessageAndTypeByAlertCode("DATA_SAVED_SUCCESSFULLY");
-
-                return ServiceResult<LabFormulaMasterResponse>.Success(
-                    responseData,
-                    successAlert.Type,
-                    successAlert.Message,
-                    200
-                );
-            }
-            catch (Exception ex)
-            {
-                if (tnx != null)
-                {
-                    try { tnx.Rollback(); _log.Error("Transaction rolled back due to error"); }
-                    catch (Exception rollbackEx) { _log.Error($"Error during rollback: {rollbackEx.Message}"); }
-                }
-
-                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
-                return ServiceResult<LabFormulaMasterResponse>.Failure(
-                    alert.Type,
-                    alert.Message,
-                    500
-                );
-            }
-            finally
-            {
-                tnx?.Dispose();
-                if (con != null)
-                {
-                    if (con.State == ConnectionState.Open) con.Close();
-                    con.Dispose();
-                }
-            }
-        }
-
-
-
-        public ServiceResult<IEnumerable<ObservationFormulaByInvestigationModel>> GetObservationFormulaByInvestigationId(int investigationId)
-        {
-            try
-            {
-                _log.Info($"GetObservationFormulaByInvestigationId called. InvestigationId={investigationId}");
-
-                string cacheKey = $"_ObservationFormula_Inv{investigationId}";
-
-                var cachedData = _distributedCache.GetString(cacheKey);
-                List<ObservationFormulaByInvestigationModel> observationFormulas;
-
-                if (!string.IsNullOrEmpty(cachedData))
-                {
-                    _log.Info($"ObservationFormula data retrieved from cache. Key={cacheKey}");
-                    observationFormulas = JsonSerializer.Deserialize<List<ObservationFormulaByInvestigationModel>>(cachedData);
-                }
-                else
-                {
-                    _log.Info($"ObservationFormula cache miss. Fetching data from database. Key={cacheKey}");
-
-                    var dataTable = _sqlHelper.GetDataTable(
-                        "S_getObservationFormulaByInvestigationId",
-                        CommandType.StoredProcedure,
-                        new { InvestigationId = investigationId }
-                    );
-
-                    observationFormulas = dataTable?.AsEnumerable().Select(row => new ObservationFormulaByInvestigationModel
-                    {
-                        InvestigationName = row.Field<string>("InvestigationName") ?? string.Empty,
-                        ObservationName = row.Field<string>("ObservationName") ?? string.Empty,
-                        FormulaText = row.Field<string>("FormulaText") ?? string.Empty,
-                        ObservationId = row.Field<int>("ObservationId"),
-                        InvastigationId = row.Field<int>("InvastigationId"),
-                        CreatedBy = row.Field<string>("CreatedBy"),
-                        CreatedOn = row.Field<string>("CreatedOn"),
-                        LastModifiedBy = row.Field<string>("LastModifiedBy"),
-                        LastModifiedOn = row.Field<string>("LastModifiedOn"),
-                    }).ToList() ?? new List<ObservationFormulaByInvestigationModel>();
-
-                    if (observationFormulas.Any())
-                    {
-                        var serialized = JsonSerializer.Serialize(observationFormulas);
-                        var cacheOptions = new DistributedCacheEntryOptions
-                        {
-                            AbsoluteExpiration = null,
-                            SlidingExpiration = null
-                        };
-                        _distributedCache.SetString(cacheKey, serialized, cacheOptions);
-                        _log.Info($"ObservationFormula data cached permanently. Key={cacheKey}, Count={observationFormulas.Count}");
-                    }
-                }
-
-                if (!observationFormulas.Any())
-                {
-                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
-                    _log.Info($"No observation formulas found for InvestigationId={investigationId}");
-                    return ServiceResult<IEnumerable<ObservationFormulaByInvestigationModel>>.Failure(
-                        alert.Type,
-                        $"No observation formulas found for InvestigationId: {investigationId}",
-                        404
-                    );
-                }
-
-                _log.Info($"Retrieved {observationFormulas.Count} observation formula(s) from cache for InvestigationId={investigationId}");
-
-                return ServiceResult<IEnumerable<ObservationFormulaByInvestigationModel>>.Success(
-                    observationFormulas,
-                    "Info",
-                    $"{observationFormulas.Count} observation formula(s) retrieved successfully",
-                    200
-                );
-            }
-            catch (Exception ex)
-            {
-                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
-                return ServiceResult<IEnumerable<ObservationFormulaByInvestigationModel>>.Failure(
-                    alert.Type,
-                    alert.Message,
-                    500
-                );
-            }
-        }
-
-       
-
-        public ServiceResult<string> DeleteLabFormulaByObservationid(int Observationid, AllGlobalValues globalValues)
-        {
-            try
-            {
-                _log.Info($"DeleteLabFormulaByObservationid called. Observationid={Observationid}");
-
-                var result = _sqlHelper.DML(
-                    "D_deleteLabFormulaByObservationid",
-                    CommandType.StoredProcedure,
-                    new { Observationid = Observationid }
-                );
-
-                // Clear related cache entries
-                GlobalFunctions.ClearCacheByPattern(_configuration, "_ObservationFormula_Inv*");
-
-                _log.Info($"Lab formula deleted successfully for Observationid={Observationid}");
-
-                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_DELETED_SUCCESSFULLY");
-                return ServiceResult<string>.Success(
-                    "Lab formula deleted successfully",
-                    alert.Type,
-                    alert.Message,
-                    200
-                );
-            }
-            catch (Exception ex)
-            {
-                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
-                return ServiceResult<string>.Failure(
-                    alert.Type,
-                    alert.Message,
-                    500
-                );
             }
         }
 
@@ -2245,86 +1935,12 @@ int? reportTypeId,
             }
         }
 
-        public ServiceResult<IEnumerable<Dictionary<string, object>>> SearchPatientInvestigationForSampleSegregation(
-   int branchId, int typeId, string uhid, string ipdNo, string labNo,
-   string fromDate, string toDate, string barCode, int subCategoryId,
-   int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId, int sampleTypeId, int roomTypeId, string isUrgent)
-        {
-            try
-            {
-                _log.Info($"SearchPatientInvestigationForSampleSegregation called. BranchId={branchId}, TypeId={typeId}");
-
-                var dataTable = _sqlHelper.GetDataTable(
-                    "S_searchPatientInvestigationForSampleSegregation",
-                    CommandType.StoredProcedure,
-                    new
-                    {
-                        @branchId = branchId,
-                        @typeId = typeId,
-                        @uhid = uhid,
-                        @ipdNo = ipdNo,
-                        @labNo = labNo,
-                        @fromDate = Utility.getDateTime(fromDate).ToString("yyyy-MM-dd"),
-                        @toDate = Utility.getDateTime(toDate).ToString("yyyy-MM-dd"),
-                        @barCode = barCode,
-                        @subCategoryId = subCategoryId,
-                        @subSubCategoryId = subSubCategoryId,
-                        @investigationId = investigationId,
-                        @patientName = patientName,
-                        @roleId = roleId,
-                        @corporateId = corporateId,
-                        @statusId = statusId,
-                        @sampleTypeId = sampleTypeId,
-                        @roomTypeId = roomTypeId,
-                        @isUrgent = isUrgent
-                    }
-                );
-
-                if (dataTable == null || dataTable.Rows.Count == 0)
-                {
-                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
-                    _log.Info("No patient investigation records found.");
-                    return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
-                        alert.Type,
-                        alert.Message,
-                        404
-                    );
-                }
-
-                // Convert DataTable rows to raw Dictionary list — no model mapping
-                var result = dataTable.AsEnumerable().Select(row =>
-                    dataTable.Columns.Cast<DataColumn>().ToDictionary(
-                        col => col.ColumnName,
-                        col => row[col] == DBNull.Value ? null : row[col]
-                    )
-                ).ToList();
-
-                _log.Info($"SearchPatientInvestigationForSampleSegregation returned {result.Count} record(s).");
-
-                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Success(
-                    result,
-                    "Info",
-                    $"{result.Count} record(s) retrieved successfully",
-                    200
-                );
-            }
-            catch (Exception ex)
-            {
-                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
-                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
-                return ServiceResult<IEnumerable<Dictionary<string, object>>>.Failure(
-                    alert.Type,
-                    alert.Message,
-                    500
-                );
-            }
-        }
-
 
             public ServiceResult<IEnumerable<Dictionary<string, object>>> searchPatientInvestigationForSampleProcessingPathology(
   int branchId, int typeId, string uhid, string ipdNo, string labNo,
   string fromDate, string toDate, string barCode, int subCategoryId,
-  int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId,int canSampleCollect)
+  int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId,int canSampleCollect,
+  int sampleTypeId = 0, int roomTypeId = 0, string isUrgent = null)
         {
             try
             {
@@ -2350,7 +1966,10 @@ int? reportTypeId,
                         @roleId = roleId,
                         @corporateId = corporateId,
                         @statusId = statusId,
-                        @canSampleCollect= canSampleCollect
+                        @canSampleCollect= canSampleCollect,
+                        @sampleTypeId = sampleTypeId,
+                        @roomTypeId = roomTypeId,
+                        @isUrgent = isUrgent
                     }
                 );
 
@@ -2398,7 +2017,8 @@ int? reportTypeId,
         public ServiceResult<IEnumerable<Dictionary<string, object>>> searchPatientInvestigationForSampleProcessingRadiology(
 int branchId, int typeId, string uhid, string ipdNo, string labNo,
 string fromDate, string toDate, string barCode, int subCategoryId,
-int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId)
+int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId,
+int sampleTypeId = 0, int roomTypeId = 0, string isUrgent = null)
         {
             try
             {
@@ -2423,7 +2043,10 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
                         @patientName = patientName,
                         @roleId = roleId,
                         @corporateId = corporateId,
-                        @statusId = statusId
+                        @statusId = statusId,
+                        @sampleTypeId = sampleTypeId,
+                        @roomTypeId = roomTypeId,
+                        @isUrgent = isUrgent
                     }
                 );
 
@@ -3344,6 +2967,16 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
                 {
                     _log.Info($"SavePatientTabularReport called. PatientInvestigationId={request.PatientInvestigationId}, InvestigationId={request.InvestigationId}, TabularReport Count={request.TabularReport?.Count ?? 0}");
 
+                    // 2026-11-27: blocking result validations of the Formula Master (LabRepository.FormulaSetup.cs)
+                    var failedRules = FailedBlockingValidations(request.PatientInvestigationId,
+                        (request.TabularReport ?? new()).Select(r => (r.ObservationId, (string?)r.ResultValue)));
+                    if (failedRules.Count > 0)
+                    {
+                        _log.Warn($"Result save blocked by {failedRules.Count} validation(s). PatientInvestigationId={request.PatientInvestigationId}");
+                        var invalid = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                        return ServiceResult<string>.Failure(invalid.Type, string.Join(" | ", failedRules), 200, failedRules);
+                    }
+
                     var connectionString = _configuration.GetConnectionString("ConnectionString");
                     if (string.IsNullOrEmpty(connectionString))
                         throw new InvalidOperationException("Connection string 'ConnectionString' not found.");
@@ -3989,7 +3622,8 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
         public ServiceResult<IEnumerable<Dictionary<string, object>>> searchPatientInvestigationForLaboratoryHelpDesk(
 int branchId, int typeId, string uhid, string ipdNo, string labNo,
 string fromDate, string toDate, string barCode, int subCategoryId,
-int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId)
+int subSubCategoryId, int investigationId, string patientName, int roleId, int corporateId, int statusId,
+int sampleTypeId = 0, int roomTypeId = 0, string isUrgent = null)
         {
             try
             {
@@ -4014,7 +3648,10 @@ int subSubCategoryId, int investigationId, string patientName, int roleId, int c
                         @patientName = patientName,
                         @roleId = roleId,
                         @corporateId = corporateId,
-                        @statusId = statusId
+                        @statusId = statusId,
+                        @sampleTypeId = sampleTypeId,
+                        @roomTypeId = roomTypeId,
+                        @isUrgent = isUrgent
                     }
                 );
 

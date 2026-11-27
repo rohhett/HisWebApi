@@ -10,6 +10,7 @@ namespace HISWEBAPI.Repositories.Interfaces
         ServiceResult<IEnumerable<DoctorDepartmentModel>> GetDoctorDepartmentList(int? departmentId = null,int? isActive = null);
         ServiceResult<CreateUpdateDoctorSpecializationResponse> CreateUpdateDoctorSpecialization(CreateUpdateDoctorSpecializationRequest request,AllGlobalValues globalValues);
         ServiceResult<IEnumerable<DoctorSpecializationModel>> GetDoctorSpecializationList(int? specializationId = null,int? isActive = null);
+        ServiceResult<ExcelUploadResponse<DoctorUploadRow>> DoctorExcelUpload(DoctorExcelUploadRequest request, AllGlobalValues globalValues);
         ServiceResult<CreateUpdateDoctorMasterResponse> CreateUpdateDoctorMaster(CreateUpdateDoctorMasterRequest request,AllGlobalValues globalValues);
         ServiceResult<CreateUpdateDoctorTimingDetailsResponse> CreateUpdateDoctorTimingDetails(CreateUpdateDoctorTimingDetailsRequest request,AllGlobalValues globalValues);
         ServiceResult<DoctorUnitMappingResponse> CreateUpdateDoctorUnitMaster(CreateUpdateDoctorUnitMasterRequest request, AllGlobalValues globalValues);

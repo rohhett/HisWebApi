@@ -657,6 +657,8 @@ namespace HISWEBAPI.Repositories.Implementations
                         var alert = _messageService.GetMessageAndTypeByAlertCode("OTP_VERIFIED"); // was "MOBILE_VERIFIED"
                         _log.Info($"Mobile number verified successfully. MobileNumber={request.MobileNumber}");
                         _distributedCache.Remove("_VendorMaster_All"); // vendor list shows contact verification status
+                        _distributedCache.Remove("_DoctorMaster_All");    // so do the doctor
+                        _distributedCache.Remove("_CorporateMaster_All"); // and corporate lists
                         return ServiceResult<string>.Success("Mobile number verified successfully", alert.Type, alert.Message, 200);
 
                     case -1:
@@ -748,6 +750,8 @@ namespace HISWEBAPI.Repositories.Implementations
                         var alert = _messageService.GetMessageAndTypeByAlertCode("EMAIL_OTP_VERIFIED"); // was "EMAIL_VERIFIED"
                         _log.Info($"Email verified successfully. Email={request.Email}");
                         _distributedCache.Remove("_VendorMaster_All"); // vendor list shows email verification status
+                        _distributedCache.Remove("_DoctorMaster_All");    // so do the doctor
+                        _distributedCache.Remove("_CorporateMaster_All"); // and corporate lists
                         return ServiceResult<string>.Success("Email verified successfully", alert.Type, alert.Message, 200);
 
                     case -1:
@@ -3524,6 +3528,97 @@ namespace HISWEBAPI.Repositories.Implementations
                 LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
                 var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
                 return ServiceResult<string>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        // ================= User-wise favourite cards (2026-11-26) =================
+        // Favourite status cards per user and page (e.g. Sample Management), so they follow the user
+        // across browsers. An empty list is a normal state, so it returns 200 with [] (not 404).
+        public ServiceResult<List<string>> GetUserFavoriteCards(string pageKey, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"GetUserFavoriteCards called. PageKey={pageKey}, UserId={globalValues.userId}");
+
+                var dataTable = _sqlHelper.GetDataTable(
+                    "S_GetUserWiseFavoriteCards",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        hospId = globalValues.hospId,
+                        userId = globalValues.userId,
+                        pageKey = pageKey.Trim()
+                    }
+                );
+
+                var cards = dataTable?.AsEnumerable()
+                    .Select(row => row.Field<string>("CardKey") ?? string.Empty)
+                    .Where(key => key.Length > 0)
+                    .ToList() ?? new List<string>();
+
+                return ServiceResult<List<string>>.Success(
+                    cards,
+                    "Info",
+                    $"{cards.Count} favourite card(s) retrieved successfully",
+                    200
+                );
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<List<string>>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<List<string>> SaveUserFavoriteCards(SaveUserFavoriteCardsRequest request, AllGlobalValues globalValues)
+        {
+            try
+            {
+                var cardKeys = (request.CardKeys ?? new List<string>())
+                    .Select(key => key?.Trim() ?? string.Empty)
+                    .Where(key => key.Length > 0)
+                    .Distinct()
+                    .ToList();
+
+                _log.Info($"SaveUserFavoriteCards called. PageKey={request.PageKey}, Cards={string.Join(",", cardKeys)}, UserId={globalValues.userId}");
+
+                var result = _sqlHelper.DML(
+                    "IU_UserWiseFavoriteCards",
+                    CommandType.StoredProcedure,
+                    new
+                    {
+                        hospId = globalValues.hospId,
+                        userId = globalValues.userId,
+                        pageKey = request.PageKey.Trim(),
+                        cardKeys = System.Text.Json.JsonSerializer.Serialize(cardKeys),
+                        IpAddress = globalValues.ipAddress
+                    },
+                    new { Result = 0 }
+                );
+
+                int resultValue = Convert.ToInt32(result);
+
+                if (resultValue < 0)
+                {
+                    _log.Warn($"SaveUserFavoriteCards rejected by SP. Result={resultValue}");
+                    var invalid = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    string message = resultValue switch
+                    {
+                        -2 => "A maximum of 5 favourite cards is allowed",
+                        _ => "Invalid favourite card list"
+                    };
+                    return ServiceResult<List<string>>.Failure(invalid.Type, message, 400);
+                }
+
+                var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_UPDATED_SUCCESSFULLY");
+                return ServiceResult<List<string>>.Success(cardKeys, alert.Type, alert.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<List<string>>.Failure(alert.Type, alert.Message, 500);
             }
         }
 

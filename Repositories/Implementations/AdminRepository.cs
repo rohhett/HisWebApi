@@ -6,6 +6,7 @@ using HISWEBAPI.Models;
 using HISWEBAPI.Repositories.Interfaces;
 using HISWEBAPI.Services;
 using HISWEBAPI.Utilities;
+using HISWEBAPI.Utilities.Helpers;
 using log4net;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Caching.Distributed;
@@ -27,7 +28,7 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace HISWEBAPI.Repositories.Implementations
 {
-    public class AdminRepository : IAdminRepository
+    public partial class AdminRepository : IAdminRepository
     {
         private readonly ICustomSqlHelper _sqlHelper;
         private readonly IResponseMessageService _messageService;
@@ -170,8 +171,7 @@ namespace HISWEBAPI.Repositories.Implementations
                     @roleId = request.RoleId,
                     @roleName = request.RoleName,
                     @isActive = request.IsActive,
-                    @faIconId = request.FaIconId,
-                    @imagePath = request.ImagePath,
+                    @roleIconId = request.RoleIconId,
                     @userId = globalValues.userId,
                     @IpAddress = globalValues.ipAddress
                 },
@@ -302,11 +302,8 @@ namespace HISWEBAPI.Repositories.Implementations
                     {
                         RoleId = row.Field<int>("RoleId"),
                         RoleName = row.Field<string>("RoleName"),
-                        FaIconId = row.Field<int>("FaIconId"),
                         IsActive = row.Field<int>("IsActive"),
-                        IconName = row.Field<string>("IconName"),
-                        IconClass = row.Field<string>("IconClass"),
-                        ImagePath = row.Field<string>("ImagePath"),
+                        RoleIconId = row.Field<int>("RoleIconId"),
                         CreatedBy = row.Field<string>("CreatedBy"),
                         CreatedOn = row.Field<string>("CreatedOn"),
                         LastModifiedBy = row.Field<string>("LastModifiedBy"),
@@ -354,6 +351,11 @@ namespace HISWEBAPI.Repositories.Implementations
                     );
                 }
 
+                // icons come from their own cache (_RoleIconMaster_All), so _RoleMaster_All stays small
+                var iconMap = RoleIconCache.GetMap(_distributedCache, _sqlHelper);
+                foreach (var role in filteredRoles)
+                    role.RoleIcon = iconMap.TryGetValue(role.RoleIconId, out var icon) ? icon : null;
+
                 _log.Info($"Retrieved {filteredRoles.Count} role(s) from cache");
 
                 return ServiceResult<IEnumerable<RoleMasterModel>>.Success(
@@ -372,6 +374,92 @@ namespace HISWEBAPI.Repositories.Implementations
                     alert.Message,
                     500
                 );
+            }
+        }
+
+        public ServiceResult<CreateUpdateRoleIconResponse> CreateUpdateRoleIcon(int roleIconId, string iconName, byte[]? pngBytes, AllGlobalValues globalValues)
+        {
+            try
+            {
+                _log.Info($"CreateUpdateRoleIcon called. RoleIconId={roleIconId}, IconName={iconName}, Bytes={pngBytes?.Length ?? 0}");
+
+                var result = _sqlHelper.DML("IU_RoleIconMaster", CommandType.StoredProcedure,
+                    new
+                    {
+                        roleIconId,
+                        iconName = iconName.Trim(),
+                        mimeType = pngBytes == null ? null : "image/png",
+                        iconBase64 = pngBytes == null ? null : Convert.ToBase64String(pngBytes),
+                        userId = globalValues.userId,
+                        IpAddress = globalValues.ipAddress
+                    },
+                    new { Result = 0 });
+
+                int resultValue = Convert.ToInt32(result);
+                _distributedCache.Remove(RoleIconCache.CacheKey);   // roles read their icon from this cache
+
+                if (resultValue == -1)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("RECORD_ALREADY_EXISTS");
+                    return ServiceResult<CreateUpdateRoleIconResponse>.Failure(alert.Type, "Role icon name already exists", 409);
+                }
+
+                if (resultValue == -2)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<CreateUpdateRoleIconResponse>.Failure(alert.Type, "Role icon file is required", 400);
+                }
+
+                if (resultValue == 0 && roleIconId > 0)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<CreateUpdateRoleIconResponse>.Failure(alert.Type, alert.Message, 404);
+                }
+
+                if (resultValue > 0)
+                {
+                    bool isNew = roleIconId == 0;
+                    var alert = _messageService.GetMessageAndTypeByAlertCode(isNew ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY");
+                    return ServiceResult<CreateUpdateRoleIconResponse>.Success(
+                        new CreateUpdateRoleIconResponse { RoleIconId = resultValue }, alert.Type, alert.Message, isNew ? 201 : 200);
+                }
+
+                _log.Error($"IU_RoleIconMaster returned unexpected result {resultValue}");
+                var failed = _messageService.GetMessageAndTypeByAlertCode("OPERATION_FAILED");
+                return ServiceResult<CreateUpdateRoleIconResponse>.Failure(failed.Type, failed.Message, 500);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<CreateUpdateRoleIconResponse>.Failure(alert.Type, alert.Message, 500);
+            }
+        }
+
+        public ServiceResult<IEnumerable<RoleIconModel>> GetRoleIconList(int? isActive = null)
+        {
+            try
+            {
+                _log.Info($"GetRoleIconList called. IsActive={isActive?.ToString() ?? "All"}");
+
+                var icons = RoleIconCache.GetAll(_distributedCache, _sqlHelper)
+                    .Where(i => !isActive.HasValue || i.IsActive == isActive.Value)
+                    .ToList();
+
+                if (!icons.Any())
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("DATA_NOT_FOUND");
+                    return ServiceResult<IEnumerable<RoleIconModel>>.Failure(alert.Type, alert.Message, 404);
+                }
+
+                return ServiceResult<IEnumerable<RoleIconModel>>.Success(
+                    icons, "Info", $"{icons.Count} role icon(s) retrieved successfully", 200);
+            }
+            catch (Exception ex)
+            {
+                LogErrors.WriteErrorLog(ex, $"{GetType().Name}.{MethodBase.GetCurrentMethod().Name}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("SERVER_ERROR_FOUND");
+                return ServiceResult<IEnumerable<RoleIconModel>>.Failure(alert.Type, alert.Message, 500);
             }
         }
 
@@ -471,6 +559,13 @@ namespace HISWEBAPI.Repositories.Implementations
         {
             try
             {
+                bool provisional = request.CanProvisionalApproval == 1;
+                // null = keep the saved path
+                string? signPath = provisional && !string.IsNullOrWhiteSpace(request.ProvisionalSignPath)
+                    ? request.ProvisionalSignPath : null;
+                string? consentPath = provisional && !string.IsNullOrWhiteSpace(request.ConsentFilePath)
+                    ? request.ConsentFilePath : null;
+
                 SqlParameter[] parameters = new SqlParameter[]
                 {
                     new SqlParameter("@HospId",1),
@@ -493,12 +588,25 @@ namespace HISWEBAPI.Repositories.Implementations
                     new SqlParameter("@UserRoleId",request.UserRoleId),
                     new SqlParameter("@UserRole", request.UserRole ?? (object)DBNull.Value),
                     new SqlParameter("@IsContactVerificationRequired", request.IsContactVerificationRequired == 0 ? 0 : 1),
+                    new SqlParameter("@CanProvisionalApproval", request.CanProvisionalApproval),
+                    new SqlParameter("@ProvisionalSignPath", signPath ?? (object)DBNull.Value),
+                    new SqlParameter("@ConsentFilePath", consentPath ?? (object)DBNull.Value),
 
                     new SqlParameter("@Result", SqlDbType.BigInt) { Direction = ParameterDirection.Output }
                 };
 
                 long result = _sqlHelper.RunProcedureInsert("IU_UserMaster", parameters);
                 _distributedCache.Remove("_UserMaster_All");
+
+                if (result == -2)
+                {
+                    var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                    return ServiceResult<UserMasterResponse>.Failure(
+                        alert.Type,
+                        "Signature is required for provisional approval",
+                        400
+                    );
+                }
 
                 if (result == -1)
                 {
@@ -659,6 +767,13 @@ namespace HISWEBAPI.Repositories.Implementations
                         IsContactVerificationRequired = row.Table.Columns.Contains("IsContactVerificationRequired")
                             && row["IsContactVerificationRequired"] != DBNull.Value
                                 ? Convert.ToInt32(row["IsContactVerificationRequired"]) : 1,
+                        // columns added by 2026-11-27_UserMasterProvisionalApproval.sql
+                        CanProvisionalApproval = row.Table.Columns.Contains("CanProvisionalApproval")
+                            ? Convert.ToInt32(row["CanProvisionalApproval"]) : 0,
+                        ProvisionalSignPath = row.Table.Columns.Contains("ProvisionalSignPath")
+                            ? row["ProvisionalSignPath"] as string : null,
+                        ConsentFilePath = row.Table.Columns.Contains("ConsentFilePath")
+                            ? row["ConsentFilePath"] as string : null,
                     }).ToList() ?? new List<UserMasterModel>();
 
                     // Store ALL users in cache (no expiration)
@@ -6691,8 +6806,9 @@ namespace HISWEBAPI.Repositories.Implementations
                         ActivePaymentModes = row.Field<string>("ActivePaymentModes") ?? string.Empty,
                         IsRegistrationChargeApplicable = row.Field<int?>("IsRegistrationChargeApplicable") ?? 0,
                         IsCaseBillingApplicable = row.Field<int?>("IsCaseBillingApplicable") ?? 0,
-
-
+                        // Contains: the list still works before 2026-11-27_DoctorCorporateUploadVerification.sql is run
+                        IsContactVerified = dataTable.Columns.Contains("IsContactVerified") ? Convert.ToInt32(row["IsContactVerified"]) : 0,
+                        IsEmailVerified = dataTable.Columns.Contains("IsEmailVerified") ? Convert.ToInt32(row["IsEmailVerified"]) : 0
                     }).ToList() ?? new List<CorporateMasterDetailModel>();
 
                     if (allCorporates.Any())
@@ -9284,10 +9400,9 @@ namespace HISWEBAPI.Repositories.Implementations
 
                 if (resultValue > 0)
                 {
-                    // Invalidate cache for this approvalTypeId
-                    string cacheKey = $"{CACHE_KEY_PREFIX_ApprovalAuthority}{request.ApprovalTypeId}";
-                    _distributedCache.Remove(cacheKey);
-                    _log.Info($"Cleared ApprovalAuthorityMaster cache. Key={cacheKey}");
+                    // every key: the type's list, the all-types list (0) and the old type's list if it changed
+                    GlobalFunctions.ClearCacheByPattern(_configuration, $"{CACHE_KEY_PREFIX_ApprovalAuthority}*");
+                    _log.Info("Cleared all ApprovalAuthorityMaster cache entries.");
 
                     var alert = _messageService.GetMessageAndTypeByAlertCode(
                         request.Id == 0 ? "DATA_SAVED_SUCCESSFULLY" : "DATA_UPDATED_SUCCESSFULLY"

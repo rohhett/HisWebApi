@@ -3602,7 +3602,7 @@ namespace HISWEBAPI.Repositories.Implementations
 
         /// <summary>
         /// Returns true if the patient investigation (FTDId) is still eligible for refund
-        /// (no sample collected/segregated/received/result/approval yet)
+        /// (no sample collected/sent to department/received/result/approval yet)
         /// </summary>
         private bool ValidatePatientInvestigationForRefund(SqlTransaction tnx, int ftdId)
         {

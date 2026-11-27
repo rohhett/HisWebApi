@@ -228,6 +228,38 @@ namespace HISWEBAPI.Controllers
         #endregion
 
 
+        /// <summary>Doctor Master Excel upload: SaveData=false validates the rows, SaveData=true saves them (all or nothing).</summary>
+        [HttpPost("doctorExcelUpload")]
+        [Authorize]
+        [RequestSizeLimit(10_000_000)]
+        public IActionResult DoctorExcelUpload([FromBody] DoctorExcelUploadRequest request)
+        {
+            _log.Info($"DoctorExcelUpload called. Rows={request?.Rows?.Count ?? 0}, SaveData={request?.SaveData}");
+
+            if (!ModelState.IsValid || request?.Rows == null || request.Rows.Count == 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "No doctor rows to upload", errors = ModelState });
+            }
+
+            if (request.Rows.Count > Utilities.ExcelUploadHelper.MaxRows)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = $"A file can have at most {Utilities.ExcelUploadHelper.MaxRows} doctor rows" });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _doctorRepository.DoctorExcelUpload(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpPost("createUpdateDoctorMaster")]
         [Authorize]
         public IActionResult CreateUpdateDoctorMaster([FromForm] CreateUpdateDoctorMasterRequest request)

@@ -146,6 +146,88 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        // owner 2026-11-26: a role icon is a PNG smaller than 5 KB, uploaded from the Role Master "+" popup
+        private const int RoleIconMaxBytes = 5 * 1024;
+        private static readonly byte[] PngSignature = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+
+        [HttpPost("createUpdateRoleIcon")]
+        [Authorize]
+        [RequestSizeLimit(64 * 1024)]
+        public IActionResult CreateUpdateRoleIcon([FromForm] CreateUpdateRoleIconRequest request)
+        {
+            _log.Info($"CreateUpdateRoleIcon called. RoleIconId={request?.RoleIconId}, IconName={request?.IconName}, Bytes={request?.IconFile?.Length}");
+
+            if (!ModelState.IsValid || request == null || string.IsNullOrWhiteSpace(request.IconName) || request.RoleIconId < 0)
+            {
+                _log.Warn("Invalid model state for role icon add/update.");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = alert.Message, errors = ModelState });
+            }
+
+            // a new icon needs a file; an update without a file keeps the current image
+            byte[]? bytes = null;
+            string? fileError = null;
+            if (request.IconFile != null)
+            {
+                using var ms = new System.IO.MemoryStream();
+                request.IconFile.CopyTo(ms);
+                bytes = ms.ToArray();
+
+                fileError =
+                    bytes.Length == 0 ? "Role icon file is empty"
+                    : bytes.Length > RoleIconMaxBytes ? "Role icon must be smaller than 5 KB"
+                    : bytes.Length < PngSignature.Length || !bytes.Take(PngSignature.Length).SequenceEqual(PngSignature) ? "Role icon must be a PNG image"
+                    : null;
+            }
+            else if (request.RoleIconId == 0)
+            {
+                fileError = "Role icon file is required";
+            }
+
+            if (fileError != null)
+            {
+                _log.Warn($"Role icon add/update rejected: {fileError}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = fileError, errors = new { iconFile = fileError } });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.CreateUpdateRoleIcon(request.RoleIconId, request.IconName, bytes, globalValues);
+
+            if (serviceResult.Result) _log.Info($"Role icon saved: {serviceResult.Message}");
+            else _log.Warn($"Role icon save failed: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
+        [HttpGet("getRoleIconList")]
+        [Authorize]
+        public IActionResult GetRoleIconList([FromQuery] int? isActive = null)
+        {
+            _log.Info($"GetRoleIconList called. IsActive={isActive?.ToString() ?? "All"}");
+
+            var serviceResult = _adminRepository.GetRoleIconList(isActive);
+
+            if (serviceResult.Result)
+                _log.Info($"Role icons fetched: {serviceResult.Message}");
+            else
+                _log.Warn($"No role icons found: {serviceResult.Message}");
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpGet("getFaIconList")]
         [Authorize]
         public IActionResult getFaIconMaster()
@@ -187,6 +269,19 @@ namespace HISWEBAPI.Controllers
                 });
             }
 
+            // paths are only kept for "Yes"
+            string? fileError = request.CanProvisionalApproval != 1 ? null
+                : CheckUserFilePath(request.ProvisionalSignPath, "Signature", ".png", ".jpg", ".jpeg")
+                  ?? CheckUserFilePath(request.ConsentFilePath, "Consent", ".pdf", ".png", ".jpg", ".jpeg")
+                  ?? (request.userId == 0 && string.IsNullOrWhiteSpace(request.ProvisionalSignPath)
+                        ? "Signature is required for provisional approval" : null);
+            if (fileError != null)
+            {
+                _log.Warn($"CreateUpdateUserMaster rejected: {fileError}");
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = fileError });
+            }
+
             var serviceResult = _adminRepository.CreateUpdateUserMaster(request);
 
             if (serviceResult.Result)
@@ -201,6 +296,17 @@ namespace HISWEBAPI.Controllers
                 message = serviceResult.Message,
                 data = serviceResult.Data
             });
+        }
+
+        // only a document stored by Home/uploadDocument may be saved against a user
+        private static string? CheckUserFilePath(string? path, string name, params string[] extensions)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            if (path.Contains("..") || !path.Replace("\\", "/").Contains("/UploadedDocument/", StringComparison.OrdinalIgnoreCase))
+                return $"{name} file path is not valid";
+            if (!extensions.Contains(Path.GetExtension(path).ToLowerInvariant()))
+                return $"{name} file must be {string.Join(", ", extensions)}";
+            return null;
         }
 
         [HttpPatch("updateUserMasterStatus")]
@@ -3328,6 +3434,38 @@ namespace HISWEBAPI.Controllers
             });
         }
 
+        /// <summary>Corporate Master Excel upload: SaveData=false validates the rows, SaveData=true saves them (all or nothing).</summary>
+        [HttpPost("corporateExcelUpload")]
+        [Authorize]
+        [RequestSizeLimit(10_000_000)]
+        public IActionResult CorporateExcelUpload([FromBody] CorporateExcelUploadRequest request)
+        {
+            _log.Info($"CorporateExcelUpload called. Rows={request?.Rows?.Count ?? 0}, SaveData={request?.SaveData}");
+
+            if (!ModelState.IsValid || request?.Rows == null || request.Rows.Count == 0)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("MODEL_VALIDATION_FAILED");
+                return BadRequest(new { result = false, messageType = alert.Type, message = "No corporate rows to upload", errors = ModelState });
+            }
+
+            if (request.Rows.Count > Utilities.ExcelUploadHelper.MaxRows)
+            {
+                var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
+                return BadRequest(new { result = false, messageType = alert.Type, message = $"A file can have at most {Utilities.ExcelUploadHelper.MaxRows} corporate rows" });
+            }
+
+            var globalValues = GlobalFunctions.GetGlobalValues(HttpContext);
+            var serviceResult = _adminRepository.CorporateExcelUpload(request, globalValues);
+
+            return StatusCode(serviceResult.StatusCode, new
+            {
+                result = serviceResult.Result,
+                messageType = serviceResult.MessageType,
+                message = serviceResult.Message,
+                data = serviceResult.Data
+            });
+        }
+
         [HttpPost("createUpdateCorporateMaster")]
         [Authorize]
         public IActionResult CreateUpdateCorporateMaster([FromBody] CorporateMasterRequest request)
@@ -4780,11 +4918,11 @@ namespace HISWEBAPI.Controllers
 
         [HttpGet("getApprovalAuthorityMasterList")]
         [Authorize]
-        public IActionResult GetApprovalAuthorityMasterList([FromQuery] int approvalTypeId)
+        public IActionResult GetApprovalAuthorityMasterList([FromQuery] int approvalTypeId = 0) // 0 = all types
         {
             _log.Info($"GetApprovalAuthorityMasterList called. ApprovalTypeId={approvalTypeId}");
 
-            if (approvalTypeId <= 0)
+            if (approvalTypeId < 0)
             {
                 _log.Warn("Invalid ApprovalTypeId provided.");
                 var alert = _messageService.GetMessageAndTypeByAlertCode("INVALID_PARAMETER");
@@ -4792,7 +4930,7 @@ namespace HISWEBAPI.Controllers
                 {
                     result = false,
                     messageType = alert.Type,
-                    message = "ApprovalTypeId must be greater than 0",
+                    message = "ApprovalTypeId cannot be negative",
                     errors = new { approvalTypeId }
                 });
             }

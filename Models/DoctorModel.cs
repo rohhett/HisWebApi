@@ -52,6 +52,8 @@ namespace HISWEBAPI.Models
         public string RoomNo { get; set; }
         public int? DoctorRoleId { get; set; }
         public string DoctorRole { get; set; }
+        public int IsContactVerified { get; set; }
+        public int IsEmailVerified { get; set; }
     }
 
     public class DoctorUnitMappingModel
