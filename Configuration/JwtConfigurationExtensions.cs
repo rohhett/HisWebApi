@@ -14,6 +14,12 @@ namespace HISWEBAPI.Configuration
             var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
             services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
 
+            // The signing key is never kept in appsettings.json (it is committed to Git).
+            // Local: dotnet user-secrets "JwtSettings:SecretKey". Server: environment variable JwtSettings__SecretKey.
+            if (Encoding.UTF8.GetByteCount(jwtSettings?.SecretKey ?? "") < 32)
+                throw new InvalidOperationException(
+                    "JwtSettings:SecretKey is missing or shorter than 32 bytes. Set the JwtSettings__SecretKey environment variable (server) or the user secret (local).");
+
             // Register JWT service
             services.AddScoped<IJwtService, JwtService>();
 
